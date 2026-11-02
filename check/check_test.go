@@ -13,4 +13,14 @@ func TestRun(t *testing.T) {
 	if cr.Issues != 2 {
 		t.Errorf("got cr.Issues = %d, want %d", cr.Issues, 2)
 	}
+
+	checks := make(map[string]Score, len(cr.Checks))
+	for _, score := range cr.Checks {
+		checks[score.Name] = score
+	}
+	for _, name := range []string{"gofmt", "go_vet", "misspell"} {
+		if len(checks[name].FileSummaries) == 0 {
+			t.Errorf("expected %s to report the fixture issue", name)
+		}
+	}
 }

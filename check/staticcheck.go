@@ -18,7 +18,7 @@ func (g Staticcheck) Weight() float64 {
 
 // Percentage returns the percentage of .go files that pass
 func (g Staticcheck) Percentage() (float64, []FileSummary, error) {
-	return GoTool(g.Dir, g.Filenames, []string{"gometalinter", "--deadline=180s", "--disable-all", "--enable=staticcheck"})
+	return GoTool(g.Dir, g.Filenames, []string{"staticcheck"})
 }
 
 // Description returns the description of Staticcheck

@@ -18,7 +18,7 @@ func (g GoLint) Weight() float64 {
 
 // Percentage returns the percentage of .go files that pass golint
 func (g GoLint) Percentage() (float64, []FileSummary, error) {
-	return GoTool(g.Dir, g.Filenames, []string{"gometalinter", "--deadline=180s", "--disable-all", "--enable=golint", "--min-confidence=0.85", "--vendor"})
+	return GoTool(g.Dir, g.Filenames, []string{"golint", "-min_confidence=0.85", "-set_exit_status"})
 }
 
 // Description returns the description of go lint

@@ -113,3 +113,44 @@ func TestDisplayFilename(t *testing.T) {
 		}
 	}
 }
+
+func TestParseDiagnostic(t *testing.T) {
+	cases := []struct {
+		input string
+		file  string
+		line  int
+		msg   string
+	}{
+		{"pkg/file.go:12:3: message", "pkg/file.go", 12, " message"},
+		{"file.go:8: message", "file.go", 8, " message"},
+	}
+
+	for _, tt := range cases {
+		file, line, msg, ok := parseDiagnostic(tt.input)
+		if !ok || file != tt.file || line != tt.line || msg != tt.msg {
+			t.Errorf("parseDiagnostic(%q) = (%q, %d, %q, %t), want (%q, %d, %q, true)", tt.input, file, line, msg, ok, tt.file, tt.line, tt.msg)
+		}
+	}
+}
+
+func TestNormalizeGocycloOutput(t *testing.T) {
+	got, err := normalizeGocycloOutput("21 check GoTool check/utils.go:337:1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "check/utils.go:337:1: cyclomatic complexity 21 in function GoTool (gocyclo)"
+	if got != want {
+		t.Errorf("normalizeGocycloOutput() = %q, want %q", got, want)
+	}
+}
+
+func TestPackageDirectories(t *testing.T) {
+	got, err := packageDirectories("repo", []string{"repo/sub/b.go", "repo/a.go", "repo/sub/c.go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{".", "./sub"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("packageDirectories() = %v, want %v", got, want)
+	}
+}
