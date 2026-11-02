@@ -1,6 +1,8 @@
 package check
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -152,5 +154,27 @@ func TestPackageDirectories(t *testing.T) {
 	want := []string{".", "./sub"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("packageDirectories() = %v, want %v", got, want)
+	}
+}
+
+func TestGoVetReportsDiagnostics(t *testing.T) {
+	dir := t.TempDir()
+	goMod := []byte("module example.com/vetfixture\n\ngo 1.27.3\n")
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), goMod, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	filename := filepath.Join(dir, "main.go")
+	source := []byte("package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"invalid %s\")\n}\n")
+	if err := os.WriteFile(filename, source, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, summaries, err := (GoVet{Dir: dir, Filenames: []string{filename}}).Percentage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 1 || len(summaries[0].Errors) == 0 {
+		t.Fatalf("GoVet summaries = %#v, want a diagnostic for the fixture", summaries)
 	}
 }

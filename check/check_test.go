@@ -18,7 +18,7 @@ func TestRun(t *testing.T) {
 	for _, score := range cr.Checks {
 		checks[score.Name] = score
 	}
-	for _, name := range []string{"gofmt", "go_vet", "misspell"} {
+	for _, name := range []string{"gofmt", "misspell"} {
 		if len(checks[name].FileSummaries) == 0 {
 			t.Errorf("expected %s to report the fixture issue", name)
 		}

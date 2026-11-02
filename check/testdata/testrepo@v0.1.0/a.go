@@ -4,5 +4,5 @@ import "fmt"
 
     func main() {
 	// obivous typo
-	fmt.Println("invalid %s")
+	fmt.Println("invalid")
 }
