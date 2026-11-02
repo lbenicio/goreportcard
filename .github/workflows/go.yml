@@ -1,6 +1,9 @@
-name: Go
+name: Static analysis and unit testing
 
 on: [push, pull_request]
+
+permissions:
+  contents: read
 
 jobs:
 
