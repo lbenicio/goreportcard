@@ -2,6 +2,7 @@ package irutil
 
 import (
 	"go/types"
+	"slices"
 	"strings"
 
 	"honnef.co/go/tools/go/ir"
@@ -46,29 +47,31 @@ func Walk(b *ir.BasicBlock, fn func(*ir.BasicBlock) bool) {
 
 func Vararg(x *ir.Slice) ([]ir.Value, bool) {
 	var out []ir.Value
-	slice, ok := x.X.(*ir.Alloc)
+	alloc, ok := x.X.(*ir.Alloc)
 	if !ok {
 		return nil, false
 	}
-	for _, ref := range *slice.Referrers() {
+	for _, ref := range *alloc.Referrers() {
 		if ref == x {
 			continue
 		}
 		if ref.Block() != x.Block() {
 			return nil, false
 		}
-		idx, ok := ref.(*ir.IndexAddr)
-		if !ok {
+		switch ref := ref.(type) {
+		case *ir.IndexAddr:
+			idx := ref
+			if len(*idx.Referrers()) != 1 {
+				return nil, false
+			}
+			store, ok := (*idx.Referrers())[0].(*ir.Store)
+			if !ok {
+				return nil, false
+			}
+			out = append(out, store.Val)
+		default:
 			return nil, false
 		}
-		if len(*idx.Referrers()) != 1 {
-			return nil, false
-		}
-		store, ok := (*idx.Referrers())[0].(*ir.Store)
-		if !ok {
-			return nil, false
-		}
-		out = append(out, store.Val)
 	}
 	return out, true
 }
@@ -94,22 +97,7 @@ func IsCallTo(call *ir.CallCommon, name string) bool { return CallName(call) == 
 
 func IsCallToAny(call *ir.CallCommon, names ...string) bool {
 	q := CallName(call)
-	for _, name := range names {
-		if q == name {
-			return true
-		}
-	}
-	return false
-}
-
-func FilterDebug(instr []ir.Instruction) []ir.Instruction {
-	var out []ir.Instruction
-	for _, ins := range instr {
-		if _, ok := ins.(*ir.DebugRef); !ok {
-			out = append(out, ins)
-		}
-	}
-	return out
+	return slices.Contains(names, q)
 }
 
 func IsExample(fn *ir.Function) bool {
@@ -123,7 +111,7 @@ func IsExample(fn *ir.Function) bool {
 	return strings.HasSuffix(f.Name(), "_test.go")
 }
 
-// Flatten recursively returns the underlying value of an ir.Sigma or
+// Flatten recursively returns the underlying value of an
 // ir.Phi node. If all edges in an ir.Phi node are the same (after
 // flattening), the flattened edge will get returned. If flattening is
 // not possible, nil is returned.
@@ -142,8 +130,6 @@ func Flatten(v ir.Value) ir.Value {
 		seen[v] = struct{}{}
 
 		switch v := v.(type) {
-		case *ir.Sigma:
-			dfs(v.X)
 		case *ir.Phi:
 			for _, e := range v.Edges {
 				dfs(e)

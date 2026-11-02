@@ -114,7 +114,7 @@ func (m *expirationMap) del(key uint64, expiration time.Time) {
 // cleanup removes all the items in the bucket that was just completed. It deletes
 // those items from the store, and calls the onEvict function on those items.
 // This function is meant to be called periodically.
-func (m *expirationMap) cleanup(store store, policy policy, onEvict onEvictFunc) {
+func (m *expirationMap) cleanup(store store, policy policy, onEvict itemCallback) {
 	if m == nil {
 		return
 	}
@@ -127,8 +127,9 @@ func (m *expirationMap) cleanup(store store, policy policy, onEvict onEvictFunc)
 	m.Unlock()
 
 	for key, conflict := range keys {
+		expr := store.Expiration(key)
 		// Sanity check. Verify that the store agrees that this key is expired.
-		if store.Expiration(key).After(now) {
+		if expr.After(now) {
 			continue
 		}
 
@@ -137,7 +138,12 @@ func (m *expirationMap) cleanup(store store, policy policy, onEvict onEvictFunc)
 		_, value := store.Del(key, conflict)
 
 		if onEvict != nil {
-			onEvict(key, conflict, value, cost)
+			onEvict(&Item{Key: key,
+				Conflict:   conflict,
+				Value:      value,
+				Cost:       cost,
+				Expiration: expr,
+			})
 		}
 	}
 }

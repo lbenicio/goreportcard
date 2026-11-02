@@ -59,7 +59,7 @@ func dirAST(files []*ast.File, fset *token.FileSet) string {
 var Analyzer = &analysis.Analyzer{
 	Name: "config",
 	Doc:  "loads configuration for the current package tree",
-	Run: func(pass *analysis.Pass) (interface{}, error) {
+	Run: func(pass *analysis.Pass) (any, error) {
 		dir := dirAST(pass.Files, pass.Fset)
 		if dir == "" {
 			cfg := DefaultConfig
@@ -72,7 +72,7 @@ var Analyzer = &analysis.Analyzer{
 		return &cfg, nil
 	},
 	RunDespiteErrors: true,
-	ResultType:       reflect.TypeOf((*Config)(nil)),
+	ResultType:       reflect.TypeFor[*Config](),
 }
 
 func For(pass *analysis.Pass) *Config {
@@ -156,8 +156,14 @@ func (c Config) String() string {
 	return buf.String()
 }
 
+// DefaultConfig is the default configuration.
+// Its initial value describes the majority of the default configuration,
+// but the Checks field can be updated at runtime based on the analyzers being used, to disable non-default checks.
+// For cmd/staticcheck, this is handled by (*lintcmd.Command).Run.
+//
+// Note that DefaultConfig shouldn't be modified while analyzers are executing.
 var DefaultConfig = Config{
-	Checks: []string{"all", "-ST1000", "-ST1003", "-ST1016", "-ST1020", "-ST1021", "-ST1022"},
+	Checks: []string{"all"},
 	Initialisms: []string{
 		"ACL", "API", "ASCII", "CPU", "CSS", "DNS",
 		"EOF", "GUID", "HTML", "HTTP", "HTTPS", "ID",
@@ -167,19 +173,31 @@ var DefaultConfig = Config{
 		"URL", "UTF8", "VM", "XML", "XMPP", "XSRF",
 		"XSS", "SIP", "RTP", "AMQP", "DB", "TS",
 	},
-	DotImportWhitelist:      []string{},
+	DotImportWhitelist: []string{
+		"simd/archsimd",
+		"github.com/mmcloughlin/avo/build",
+		"github.com/mmcloughlin/avo/operand",
+		"github.com/mmcloughlin/avo/reg",
+	},
 	HTTPStatusCodeWhitelist: []string{"200", "400", "404", "500"},
 }
 
 const ConfigName = "staticcheck.conf"
+
+type ParseError struct {
+	Filename string
+	toml.ParseError
+}
 
 func parseConfigs(dir string) ([]Config, error) {
 	var out []Config
 
 	// TODO(dh): consider stopping at the GOPATH/module boundary
 	for dir != "" {
-		f, err := os.Open(filepath.Join(dir, ConfigName))
-		if os.IsNotExist(err) {
+		path := filepath.Join(dir, ConfigName)
+		fi, err := os.Stat(path)
+		if os.IsNotExist(err) || (err == nil && !fi.Mode().IsRegular()) {
+			// walk up
 			ndir := filepath.Dir(dir)
 			if ndir == dir {
 				break
@@ -190,10 +208,25 @@ func parseConfigs(dir string) ([]Config, error) {
 		if err != nil {
 			return nil, err
 		}
+
+		// There is a small TOCTOU window here, but we're fine with reporting an
+		// error if the source tree is modified concurrently in weird ways while
+		// running Staticcheck.
+		f, err := os.Open(path)
+		if err != nil {
+			return nil, err
+		}
+
 		var cfg Config
-		_, err = toml.DecodeReader(f, &cfg)
+		_, err = toml.NewDecoder(f).Decode(&cfg)
 		f.Close()
 		if err != nil {
+			if err, ok := err.(toml.ParseError); ok {
+				return nil, ParseError{
+					Filename:   filepath.Join(dir, ConfigName),
+					ParseError: err,
+				}
+			}
 			return nil, err
 		}
 		out = append(out, cfg)

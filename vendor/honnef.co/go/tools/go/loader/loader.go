@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"go/ast"
+	"go/build"
 	"go/parser"
 	"go/scanner"
 	"go/token"
@@ -12,9 +13,9 @@ import (
 	"time"
 
 	"honnef.co/go/tools/config"
-	"honnef.co/go/tools/internal/cache"
-	"honnef.co/go/tools/internal/go/gcimporter"
+	"honnef.co/go/tools/lintcmd/cache"
 
+	"golang.org/x/tools/go/gcexportdata"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -26,7 +27,7 @@ type PackageSpec struct {
 	ID      string
 	Name    string
 	PkgPath string
-	// Errors that occured while building the import graph. These will
+	// Errors that occurred while building the import graph. These will
 	// primarily be parse errors or failure to resolve imports, but
 	// may also be other errors.
 	Errors          []packages.Error
@@ -37,6 +38,7 @@ type PackageSpec struct {
 	Imports         map[string]*PackageSpec
 	TypesSizes      types.Sizes
 	Hash            cache.ActionID
+	Module          *packages.Module
 
 	Config config.Config
 }
@@ -48,7 +50,7 @@ func (spec *PackageSpec) String() string {
 type Package struct {
 	*PackageSpec
 
-	// Errors that occured while loading the package. These will
+	// Errors that occurred while loading the package. These will
 	// primarily be parse or type errors, but may also be lower-level
 	// failures such as file-system ones.
 	Errors    []packages.Error
@@ -71,10 +73,11 @@ func Graph(cfg *packages.Config, patterns ...string) ([]*PackageSpec, error) {
 	dcfg.Mode = packages.NeedName |
 		packages.NeedImports |
 		packages.NeedDeps |
-		packages.NeedExportsFile |
+		packages.NeedExportFile |
 		packages.NeedFiles |
 		packages.NeedCompiledGoFiles |
-		packages.NeedTypesSizes
+		packages.NeedTypesSizes |
+		packages.NeedModule
 	pkgs, err := packages.Load(&dcfg, patterns...)
 	if err != nil {
 		return nil, err
@@ -93,6 +96,7 @@ func Graph(cfg *packages.Config, patterns ...string) ([]*PackageSpec, error) {
 			ExportFile:      pkg.ExportFile,
 			Imports:         map[string]*PackageSpec{},
 			TypesSizes:      pkg.TypesSizes,
+			Module:          pkg.Module,
 		}
 		for path, imp := range pkg.Imports {
 			spec.Imports[path] = m[imp]
@@ -134,11 +138,20 @@ func Graph(cfg *packages.Config, patterns ...string) ([]*PackageSpec, error) {
 type program struct {
 	fset     *token.FileSet
 	packages map[string]*types.Package
+	options  *Options
 }
 
 type Stats struct {
 	Source time.Duration
 	Export map[*PackageSpec]time.Duration
+}
+
+type Options struct {
+	// The Go language version to use for the type checker. If unset, or if set
+	// to "module", it will default to the Go version specified in the module;
+	// if there is no module, it will default to the version of Go the
+	// executable was built with.
+	GoVersion string
 }
 
 // Load loads the package described in spec. Imports will be loaded
@@ -148,23 +161,28 @@ type Stats struct {
 // An error will only be returned for system failures, such as failure
 // to read export data from disk. Syntax and type errors, among
 // others, will only populate the returned package's Errors field.
-func Load(spec *PackageSpec) (*Package, Stats, error) {
+func Load(spec *PackageSpec, opts *Options) (*Package, Stats, error) {
+	if opts == nil {
+		opts = &Options{}
+	}
+	if opts.GoVersion == "" {
+		opts.GoVersion = "module"
+	}
 	prog := &program{
 		fset:     token.NewFileSet(),
 		packages: map[string]*types.Package{},
+		options:  opts,
 	}
 
 	stats := Stats{
 		Export: map[*PackageSpec]time.Duration{},
 	}
-	var b []byte
 	for _, imp := range spec.Imports {
 		if imp.PkgPath == "unsafe" {
 			continue
 		}
 		t := time.Now()
-		var err error
-		_, b, err = prog.loadFromExport(imp, b)
+		_, err := prog.loadFromExport(imp)
 		stats.Export[imp] = time.Since(t)
 		if err != nil {
 			return nil, stats, err
@@ -173,32 +191,33 @@ func Load(spec *PackageSpec) (*Package, Stats, error) {
 	t := time.Now()
 	pkg, err := prog.loadFromSource(spec)
 	if err == errMaxFileSize {
-		pkg, _, err = prog.loadFromExport(spec, b)
+		pkg, err = prog.loadFromExport(spec)
 	}
 	stats.Source = time.Since(t)
 	return pkg, stats, err
 }
 
 // loadFromExport loads a package from export data.
-func (prog *program) loadFromExport(spec *PackageSpec, b []byte) (*Package, []byte, error) {
+func (prog *program) loadFromExport(spec *PackageSpec) (*Package, error) {
 	// log.Printf("Loading package %s from export", spec)
 	if spec.ExportFile == "" {
-		return nil, b, fmt.Errorf("no export data for %q", spec.ID)
+		return nil, fmt.Errorf("no export data for %q", spec.ID)
 	}
 	f, err := os.Open(spec.ExportFile)
 	if err != nil {
-		return nil, b, err
+		return nil, err
 	}
 	defer f.Close()
 
-	b, err = gcimporter.GetExportData(f, b)
+	//lint:ignore SA1019 NewReader does exactly what we need: it supports Go
+	//  1.27 compiler export data and Go 1.28 cmd/export data.
+	r, err := gcexportdata.NewReader(f)
 	if err != nil {
-		return nil, b, err
+		return nil, err
 	}
-
-	_, tpkg, err := gcimporter.IImportData(prog.fset, prog.packages, b[1:], spec.PkgPath)
+	tpkg, err := gcexportdata.Read(r, prog.fset, prog.packages, spec.PkgPath)
 	if err != nil {
-		return nil, b, err
+		return nil, err
 	}
 	pkg := &Package{
 		PackageSpec: spec,
@@ -208,7 +227,7 @@ func (prog *program) loadFromExport(spec *PackageSpec, b []byte) (*Package, []by
 	// runtime.SetFinalizer(pkg, func(pkg *Package) {
 	// 	log.Println("Unloading package", pkg.PkgPath)
 	// })
-	return pkg, b, nil
+	return pkg, nil
 }
 
 // loadFromSource loads a package from source. All of its dependencies
@@ -224,12 +243,14 @@ func (prog *program) loadFromSource(spec *PackageSpec) (*Package, error) {
 		Syntax:      make([]*ast.File, len(spec.CompiledGoFiles)),
 		Fset:        prog.fset,
 		TypesInfo: &types.Info{
-			Types:      make(map[ast.Expr]types.TypeAndValue),
-			Defs:       make(map[*ast.Ident]types.Object),
-			Uses:       make(map[*ast.Ident]types.Object),
-			Implicits:  make(map[ast.Node]types.Object),
-			Scopes:     make(map[ast.Node]*types.Scope),
-			Selections: make(map[*ast.SelectorExpr]*types.Selection),
+			Types:        make(map[ast.Expr]types.TypeAndValue),
+			Defs:         make(map[*ast.Ident]types.Object),
+			Uses:         make(map[*ast.Ident]types.Object),
+			Implicits:    make(map[ast.Node]types.Object),
+			Scopes:       make(map[ast.Node]*types.Scope),
+			Selections:   make(map[*ast.SelectorExpr]*types.Selection),
+			Instances:    make(map[*ast.Ident]types.Instance),
+			FileVersions: make(map[*ast.File]string),
 		},
 	}
 	// runtime.SetFinalizer(pkg, func(pkg *Package) {
@@ -253,7 +274,7 @@ func (prog *program) loadFromSource(spec *PackageSpec) (*Package, error) {
 		if fi.Size() >= MaxFileSize {
 			return nil, errMaxFileSize
 		}
-		af, err := parser.ParseFile(prog.fset, file, f, parser.ParseComments)
+		af, err := parser.ParseFile(prog.fset, file, f, parser.ParseComments|parser.SkipObjectResolution)
 		f.Close()
 		if err != nil {
 			pkg.Errors = append(pkg.Errors, convertError(err)...)
@@ -287,8 +308,22 @@ func (prog *program) loadFromSource(spec *PackageSpec) (*Package, error) {
 			pkg.Errors = append(pkg.Errors, convertError(err)...)
 		},
 	}
-	types.NewChecker(tc, pkg.Fset, pkg.Types, pkg.TypesInfo).Files(pkg.Syntax)
-	return pkg, nil
+	if prog.options.GoVersion == "module" {
+		if spec.Module != nil && spec.Module.GoVersion != "" {
+			tc.GoVersion = "go" + spec.Module.GoVersion
+		} else {
+			tags := build.Default.ReleaseTags
+			tc.GoVersion = tags[len(tags)-1]
+		}
+	} else {
+		tc.GoVersion = prog.options.GoVersion
+	}
+	// Note that the type-checker can return a non-nil error even though the Go
+	// compiler has already successfully built this package (which is an
+	// invariant of getting to this point), for example because of the Go
+	// version passed to the type checker.
+	err := types.NewChecker(tc, pkg.Fset, pkg.Types, pkg.TypesInfo).Files(pkg.Syntax)
+	return pkg, err
 }
 
 func convertError(err error) []packages.Error {
@@ -325,6 +360,12 @@ func convertError(err error) []packages.Error {
 			Kind: packages.TypeError,
 		})
 
+	case config.ParseError:
+		errs = append(errs, packages.Error{
+			Pos:  fmt.Sprintf("%s:%d:%d", err.Filename, err.Position.Line, err.Position.Col),
+			Msg:  fmt.Sprintf("%s (last key parsed: %q)", err.Message, err.LastKey),
+			Kind: packages.ParseError,
+		})
 	default:
 		errs = append(errs, packages.Error{
 			Pos:  "-",

@@ -1,3 +1,7 @@
+**NOTE:** Golint is [deprecated and frozen](https://github.com/golang/go/issues/38968).
+There's no drop-in replacement for it, but tools such as [Staticcheck](https://staticcheck.io/)
+and `go vet` should be used instead.
+
 Golint is a linter for Go source code.
 
 [![Go Reference](https://pkg.go.dev/badge/golang.org/x/lint.svg)](https://pkg.go.dev/golang.org/x/lint)
@@ -51,14 +55,6 @@ Golint is meant to carry out the stylistic conventions put forth in
 [Effective Go](https://golang.org/doc/effective_go.html) and
 [CodeReviewComments](https://golang.org/wiki/CodeReviewComments).
 Changes that are not aligned with those documents will not be considered.
-
-## Contributions
-
-Contributions to this project are welcome provided they are [in scope](#scope),
-though please send mail before starting work on anything major.
-Contributors retain their copyright, so we need you to fill out
-[a short form](https://developers.google.com/open-source/cla/individual)
-before we can accept your contribution.
 
 ## Vim
 
