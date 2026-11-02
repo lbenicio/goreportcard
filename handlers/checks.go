@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"os"
-	"strings"
 	"time"
 
 	badger "github.com/dgraph-io/badger/v2"
@@ -20,10 +18,6 @@ type notFoundError struct {
 
 func (n notFoundError) Error() string {
 	return fmt.Sprintf("%q not found in cache", n.repo)
-}
-
-func dirName(repo, ver string) string {
-	return fmt.Sprintf("_repos/src/%s@%s", strings.ToLower(repo), ver)
 }
 
 func getFromCache(db *badger.DB, repo string) (checksResp, error) {
@@ -93,23 +87,21 @@ func newChecksResp(db *badger.DB, repo string, forceRefresh bool) (checksResp, e
 	}
 
 	c := download.NewProxyClient("https://proxy.golang.org")
-	ver, err := c.ProxyDownload(repo)
+	downloaded, err := c.ProxyDownload(repo)
 	if err != nil {
 		log.Println("ERROR:", err)
 		return checksResp{}, fmt.Errorf("could not download repo: %v", err)
 	}
+	defer func() {
+		if err := downloaded.Cleanup(); err != nil {
+			log.Println("ERROR: could not remove downloaded module:", err)
+		}
+	}()
 
-	checkResult, err := check.Run(dirName(repo, ver), false)
+	checkResult, err := check.Run(downloaded.Dir, false)
 	if err != nil {
 		return checksResp{}, err
 	}
-
-	defer func() {
-		err := os.RemoveAll(dirName(repo, ver))
-		if err != nil {
-			log.Println("ERROR: could not remove dir:", err)
-		}
-	}()
 
 	t := time.Now().UTC()
 	resp := checksResp{
@@ -119,7 +111,7 @@ func newChecksResp(db *badger.DB, repo string, forceRefresh bool) (checksResp, e
 		Files:                checkResult.Files,
 		Issues:               checkResult.Issues,
 		Repo:                 repo,
-		Version:              ver,
+		Version:              downloaded.Version,
 		ResolvedRepo:         repo,
 		LastRefresh:          t,
 		LastRefreshFormatted: t.Format(time.UnixDate),

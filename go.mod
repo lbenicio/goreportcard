@@ -6,6 +6,7 @@ require (
 	github.com/dgraph-io/badger/v2 v2.2007.4
 	github.com/dustin/go-humanize v1.1.0
 	github.com/prometheus/client_golang v1.25.0
+	golang.org/x/mod v0.42.0
 )
 
 require (
@@ -30,7 +31,6 @@ require (
 	github.com/prometheus/procfs v0.23.0 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20261014143641-f0251eb4aa3e // indirect
 	golang.org/x/lint v0.0.0-20241112194109-818c5a804067 // indirect
-	golang.org/x/mod v0.42.0 // indirect
 	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect

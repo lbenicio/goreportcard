@@ -1,19 +1,13 @@
 package handlers
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
-var dirNameTests = []struct {
-	url  string
-	ver  string
-	want string
-}{
-	{"github.com/foo/bar", "v0.1.0", "_repos/src/github.com/foo/bar@v0.1.0"},
-}
-
-func TestDirName(t *testing.T) {
-	for _, tt := range dirNameTests {
-		if got := dirName(tt.url, tt.ver); got != tt.want {
-			t.Errorf("dirName(%q, %q) = %q, want %q", tt.url, tt.ver, got, tt.want)
-		}
+func TestNewChecksRespRejectsInvalidRepoPath(t *testing.T) {
+	_, err := newChecksResp(nil, "../../outside", true)
+	if err == nil || !strings.Contains(err.Error(), "invalid module path") {
+		t.Fatalf("newChecksResp error = %v, want invalid module path error", err)
 	}
 }

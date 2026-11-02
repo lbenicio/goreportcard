@@ -36,16 +36,17 @@ func (gh *GRCHandler) HighScoresHandler(w http.ResponseWriter, r *http.Request, 
 		heap.Init(scores)
 
 		item, err = txn.Get([]byte("total_repos"))
+		if err != nil && err != badger.ErrKeyNotFound {
+			return err
+		}
 		if item == nil {
 			count = 0
 			return nil
 		}
 
-		if item != nil {
-			err = item.Value(func(val []byte) error {
-				return json.Unmarshal(val, &count)
-			})
-		}
+		err = item.Value(func(val []byte) error {
+			return json.Unmarshal(val, &count)
+		})
 
 		return err
 	})
