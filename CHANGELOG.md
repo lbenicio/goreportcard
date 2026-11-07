@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.0.6] - 2026-11-07
+
+### Changed
+- Remove sponsor, supporter, and Patreon promotions from the UI, and update repository links and maintainer credits for the current maintainer.
+
 ## [1.0.5] - 2026-11-06
 
 ### Fixed
