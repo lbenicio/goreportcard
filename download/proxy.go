@@ -2,6 +2,7 @@ package download
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,6 +22,15 @@ type moduleVersion struct {
 	Version string
 }
 
+type proxyResponseError struct {
+	URL        string
+	StatusCode int
+}
+
+func (e *proxyResponseError) Error() string {
+	return fmt.Sprintf("module proxy request to %s returned HTTP %d", e.URL, e.StatusCode)
+}
+
 // ProxyClient is a client for the module proxy
 type ProxyClient struct {
 	URL string
@@ -29,6 +39,29 @@ type ProxyClient struct {
 // NewProxyClient returns a new ProxyClient
 func NewProxyClient(url string) ProxyClient {
 	return ProxyClient{URL: url}
+}
+
+// Download first uses the module proxy and falls back to a shallow GitHub checkout
+// when the requested module is not available there.
+func (c *ProxyClient) Download(path string) (DownloadedModule, error) {
+	downloaded, err := c.ProxyDownload(path)
+	if err == nil {
+		return downloaded, nil
+	}
+
+	var responseErr *proxyResponseError
+	if !errors.As(err, &responseErr) || responseErr.StatusCode != http.StatusNotFound {
+		return DownloadedModule{}, err
+	}
+	if _, _, repoErr := parseGitHubRepository(path); repoErr != nil {
+		return DownloadedModule{}, err
+	}
+
+	downloaded, githubErr := downloadGitHubRepository(path)
+	if githubErr != nil {
+		return DownloadedModule{}, fmt.Errorf("%v; GitHub source fallback failed: %w", err, githubErr)
+	}
+	return downloaded, nil
 }
 
 func (c *ProxyClient) latestURL(escapedModule string) string {
@@ -75,7 +108,7 @@ func (c *ProxyClient) ModuleName(path string) (string, error) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("could not get module name from %s", u)
+		return "", &proxyResponseError{URL: u, StatusCode: resp.StatusCode}
 	}
 
 	sp := strings.Split(string(b), "\n")
@@ -110,7 +143,7 @@ func (c *ProxyClient) LatestVersion(path string) (string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("could not get latest module version from %s", u)
+		return "", &proxyResponseError{URL: u, StatusCode: resp.StatusCode}
 	}
 
 	var mv moduleVersion
@@ -185,7 +218,7 @@ func (c *ProxyClient) ProxyDownload(path string) (downloaded DownloadedModule, r
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return DownloadedModule{}, fmt.Errorf("status %d", resp.StatusCode)
+		return DownloadedModule{}, &proxyResponseError{URL: c.zipURL(escapedPath, escapedVersion), StatusCode: resp.StatusCode}
 	}
 
 	if err := os.MkdirAll(reposDir, 0o755); err != nil {

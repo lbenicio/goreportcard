@@ -87,7 +87,7 @@ func newChecksResp(db *badger.DB, repo string, forceRefresh bool) (checksResp, e
 	}
 
 	c := download.NewProxyClient("https://proxy.golang.org")
-	downloaded, err := c.ProxyDownload(repo)
+	downloaded, err := c.Download(repo)
 	if err != nil {
 		log.Println("ERROR:", err)
 		return checksResp{}, fmt.Errorf("could not download repo: %v", err)

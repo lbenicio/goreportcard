@@ -1,9 +1,11 @@
 package check
 
 import (
+	"bufio"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -20,6 +22,26 @@ func TestGoFiles(t *testing.T) {
 	wantSkipped := []string{"testdata/testfiles/a.pb.go", "testdata/testfiles/a.pb.gw.go"}
 	if !reflect.DeepEqual(skipped, wantSkipped) {
 		t.Errorf("GoFiles(%q) skipped = %v, want %v", "testdata/testfiles/", skipped, wantSkipped)
+	}
+}
+
+func TestGoFilesSkipsSymlinks(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(t.TempDir(), "outside.go")
+	if err := os.WriteFile(target, []byte("package outside\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "linked.go")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	files, _, err := GoFiles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 0 {
+		t.Errorf("GoFiles(%q) = %v, want symlink to be excluded", dir, files)
 	}
 }
 
@@ -66,6 +88,87 @@ func TestGoTool(t *testing.T) {
 	}
 }
 
+func TestGoToolSupportsNestedWorkspaceModules(t *testing.T) {
+	t.Setenv("GOWORK", "")
+	root := t.TempDir()
+	modulesDir := filepath.Join(root, "modules")
+	if err := os.MkdirAll(modulesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	goWork := "go 1.20\n\nuse (\n\t./api\n\t./auth\n\t./inactive\n)\n"
+	if err := os.WriteFile(filepath.Join(modulesDir, "go.work"), []byte(goWork), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var filenames []string
+	for _, module := range []string{"api", "auth", "inactive"} {
+		moduleDir := filepath.Join(modulesDir, module)
+		if err := os.MkdirAll(moduleDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		goMod := "module example.com/" + module + "\n\ngo 1.20\n"
+		source := "package " + module + "\n\nfunc Exported() {}\n"
+		if module == "auth" {
+			goMod += "\nrequire example.com/api v0.0.0\n"
+			source = "package auth\n\nimport \"example.com/api\"\n\nfunc UseAPI() { api.Exported() }\n"
+		}
+		if module == "inactive" {
+			source = "//go:build ignore\n\npackage inactive\n"
+		}
+		if err := os.WriteFile(filepath.Join(moduleDir, "go.mod"), []byte(goMod), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		filename := filepath.Join(moduleDir, module+".go")
+		if err := os.WriteFile(filename, []byte(source), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		filenames = append(filenames, filename)
+	}
+
+	percentage, failed, err := GoTool(root, filenames, []string{"go", "vet"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if percentage != 1 {
+		t.Errorf("GoTool percentage = %v, want 1", percentage)
+	}
+	if len(failed) != 0 {
+		t.Errorf("GoTool failures = %v, want none", failed)
+	}
+}
+
+func TestGoToolSkipsInactiveOnlyPackage(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/inactive\n\ngo 1.27.3\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	filename := filepath.Join(dir, "ignored.go")
+	source := []byte("//go:build ignore\n\npackage ignored\n")
+	if err := os.WriteFile(filename, source, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	filenames, _, err := GoFiles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(filenames, []string{filename}) {
+		t.Fatalf("GoFiles(%q) = %v, want the inactive source file to remain available to file checks", dir, filenames)
+	}
+
+	percentage, failed, err := GoTool(dir, filenames, []string{"go", "vet"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if percentage != 1 {
+		t.Errorf("GoTool percentage = %v, want 1", percentage)
+	}
+	if len(failed) != 0 {
+		t.Errorf("GoTool failures = %v, want none", failed)
+	}
+}
+
 func TestMakeFilename(t *testing.T) {
 	cases := []struct {
 		fn   string
@@ -87,6 +190,7 @@ func TestFileURL(t *testing.T) {
 		want string
 	}{
 		{"/github.com/foo/testrepo@v0.1.0/bar/baz.go", "https://github.com/foo/testrepo/blob/v0.1.0/bar/baz.go"},
+		{"/github-run/github.com/lbenicio/kubernetes-dashboard@0123456789abcdef0123456789abcdef01234567/modules/api/main.go", "https://github.com/lbenicio/kubernetes-dashboard/blob/0123456789abcdef0123456789abcdef01234567/modules/api/main.go"},
 		{"/github.com/foo/testrepo@v0.0.0-20211126063219-a5e10ccf946a/bar/baz.go", "https://github.com/foo/testrepo/blob/a5e10ccf946a/bar/baz.go"},
 		{"/github.com/foo/testrepo@v20.10.11+incompatible/bar/baz.go", "https://github.com/foo/testrepo/blob/v20.10.11/bar/baz.go"},
 		{"/github.com/foo/testrepo@v0.1.0-alpha/bar/baz.go", "https://github.com/foo/testrepo/blob/v0.1.0-alpha/bar/baz.go"},
@@ -154,6 +258,28 @@ func TestPackageDirectories(t *testing.T) {
 	want := []string{".", "./sub"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("packageDirectories() = %v, want %v", got, want)
+	}
+}
+
+func TestGetFileSummaryMapIgnoresModuleDownloadProgress(t *testing.T) {
+	dir := t.TempDir()
+	filename := filepath.Join(dir, "main.go")
+	if err := os.WriteFile(filename, []byte("package main\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	output := "go: downloading github.com/prometheus/client_golang v1.24.0\nmain.go:1: vet diagnostic\n"
+	summaries, err := getFileSummaryMap(bufio.NewScanner(strings.NewReader(output)), dir, "vet")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 1 {
+		t.Fatalf("summaries = %#v, want one vet diagnostic", summaries)
+	}
+	for _, summary := range summaries {
+		if len(summary.Errors) != 1 || summary.Errors[0].ErrorString != " vet diagnostic" {
+			t.Errorf("summary = %#v, want the vet diagnostic without download progress", summary)
+		}
 	}
 }
 

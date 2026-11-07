@@ -2,7 +2,9 @@ package check
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
+	"go/build"
 	"log"
 	"os"
 	"os/exec"
@@ -34,6 +36,9 @@ func GoFiles(dir string) (filenames, skipped []string, err error) {
 		}
 		if fi.IsDir() {
 			return nil // not a file.  ignore.
+		}
+		if !fi.Mode().IsRegular() {
+			return nil
 		}
 		fiName := fi.Name()
 		for _, skip := range skipSuffixes {
@@ -241,6 +246,12 @@ func fileURL(filename string) string {
 
 	var fileURL string
 	base := strings.TrimPrefix(repo, "_repos/src/")
+	githubBase := base
+	if !strings.HasPrefix(githubBase, "github.com/") {
+		if i := strings.Index(githubBase, "/github.com/"); i >= 0 {
+			githubBase = githubBase[i+1:]
+		}
+	}
 	switch {
 	case strings.HasPrefix(base, "golang.org/x/"):
 		var pkg string
@@ -249,9 +260,10 @@ func fileURL(filename string) string {
 		}
 
 		return fmt.Sprintf("https://github.com/golang/%s/blob/master%s", pkg, strings.TrimPrefix(filename, "/"+base))
-	case strings.HasPrefix(base, "github.com/"):
-		if len(strings.Split(base, "/")) == 4 {
-			base = strings.Join(strings.Split(base, "/")[0:3], "/")
+	case strings.HasPrefix(githubBase, "github.com/"):
+		githubParts := strings.Split(githubBase, "/")
+		if len(githubParts) >= 3 {
+			base = strings.Join(githubParts[:3], "/")
 		}
 
 		if ver != "" {
@@ -303,6 +315,10 @@ outer:
 	for out.Scan() {
 		line := out.Text()
 		if strings.TrimSpace(line) == "" || strings.HasPrefix(line, "# ") {
+			continue
+		}
+		// Go includes module download progress in the analyzer output stream.
+		if strings.HasPrefix(line, "go: downloading ") {
 			continue
 		}
 
@@ -405,6 +421,131 @@ func isPackageTool(tool string) bool {
 	}
 }
 
+type packageGroup struct {
+	dir       string
+	filenames []string
+}
+
+func packageGroups(dir string, filenames []string) ([]packageGroup, error) {
+	root, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, err
+	}
+	groupsByDir := make(map[string]*packageGroup)
+	buildContext := build.Default
+	if goos := os.Getenv("GOOS"); goos != "" {
+		buildContext.GOOS = goos
+	}
+	if goarch := os.Getenv("GOARCH"); goarch != "" {
+		buildContext.GOARCH = goarch
+	}
+	if cgoEnabled, ok := os.LookupEnv("CGO_ENABLED"); ok {
+		buildContext.CgoEnabled = cgoEnabled != "0"
+	}
+	for _, filename := range filenames {
+		absFilename, err := filepath.Abs(filename)
+		if err != nil {
+			return nil, err
+		}
+		if !pathWithin(root, absFilename) && !filepath.IsAbs(filename) {
+			absFilename, err = filepath.Abs(filepath.Join(dir, filename))
+			if err != nil {
+				return nil, err
+			}
+		}
+		if !pathWithin(root, absFilename) {
+			return nil, fmt.Errorf("file %q is outside checked directory %q", filename, dir)
+		}
+
+		matched, err := buildContext.MatchFile(filepath.Dir(absFilename), filepath.Base(absFilename))
+		if err != nil {
+			return nil, fmt.Errorf("could not match Go file %q to build constraints: %w", filename, err)
+		}
+		if !matched {
+			continue
+		}
+
+		moduleRoot := root
+		current := filepath.Dir(absFilename)
+		for {
+			_, err := os.Stat(filepath.Join(current, "go.mod"))
+			if err == nil {
+				moduleRoot = current
+				break
+			}
+			if !errors.Is(err, os.ErrNotExist) {
+				return nil, fmt.Errorf("could not inspect module root %q: %w", current, err)
+			}
+			if current == root {
+				break
+			}
+			parent := filepath.Dir(current)
+			if parent == current || !pathWithin(root, parent) {
+				break
+			}
+			current = parent
+		}
+
+		relativeRoot, err := filepath.Rel(root, moduleRoot)
+		if err != nil {
+			return nil, err
+		}
+		groupDir := dir
+		if relativeRoot != "." {
+			groupDir = filepath.Join(dir, relativeRoot)
+		}
+		key := filepath.Clean(groupDir)
+		group := groupsByDir[key]
+		if group == nil {
+			group = &packageGroup{dir: groupDir}
+			groupsByDir[key] = group
+		}
+		group.filenames = append(group.filenames, filename)
+	}
+
+	dirs := make([]string, 0, len(groupsByDir))
+	for dir := range groupsByDir {
+		dirs = append(dirs, dir)
+	}
+	sort.Strings(dirs)
+	groups := make([]packageGroup, 0, len(dirs))
+	for _, dir := range dirs {
+		groups = append(groups, *groupsByDir[dir])
+	}
+	return groups, nil
+}
+
+func runPackageGroups(filenames, command []string, groups []packageGroup) (float64, []FileSummary, error) {
+	failedByFile := make(map[string]FileSummary)
+	var groupErrors []error
+	for _, group := range groups {
+		_, failed, err := GoTool(group.dir, group.filenames, command)
+		if err != nil {
+			groupErrors = append(groupErrors, fmt.Errorf("%s: %w", group.dir, err))
+		}
+		for _, summary := range failed {
+			if existing, ok := failedByFile[summary.Filename]; ok {
+				existing.Errors = append(existing.Errors, summary.Errors...)
+				failedByFile[summary.Filename] = existing
+			} else {
+				failedByFile[summary.Filename] = summary
+			}
+		}
+	}
+
+	failed := make([]FileSummary, 0, len(failedByFile))
+	for _, summary := range failedByFile {
+		failed = append(failed, summary)
+	}
+	sort.Slice(failed, func(i, j int) bool {
+		return failed[i].Filename < failed[j].Filename
+	})
+	if err := errors.Join(groupErrors...); err != nil {
+		return 0, failed, err
+	}
+	return float64(len(filenames)-len(failed)) / float64(len(filenames)), failed, nil
+}
+
 func setModuleMode(cmd *exec.Cmd, dir string) {
 	for _, name := range []string{"go.mod", "go.work"} {
 		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
@@ -438,6 +579,25 @@ func GoTool(dir string, filenames, command []string) (float64, []FileSummary, er
 		tool = "vet"
 	}
 
+	packageToolFilenames := filenames
+	if isPackageTool(tool) {
+		groups, err := packageGroups(dir, filenames)
+		if err != nil {
+			return 0, []FileSummary{}, err
+		}
+		if len(groups) == 0 {
+			return 1, []FileSummary{}, nil
+		}
+		var activeFilenames []string
+		for _, group := range groups {
+			activeFilenames = append(activeFilenames, group.filenames...)
+		}
+		if len(groups) > 1 || filepath.Clean(groups[0].dir) != filepath.Clean(dir) {
+			return runPackageGroups(activeFilenames, command, groups)
+		}
+		packageToolFilenames = groups[0].filenames
+	}
+
 	if tool == "misspell" && len(filenames) > 300 {
 		log.Println("disabling misspell on large repo...")
 		return 1, []FileSummary{}, nil
@@ -457,7 +617,7 @@ func GoTool(dir string, filenames, command []string) (float64, []FileSummary, er
 			packageArgs = packageArgs[1:]
 		}
 		if !hasPackageArgument(packageArgs) {
-			packages, err := packageDirectories(dir, filenames)
+			packages, err := packageDirectories(dir, packageToolFilenames)
 			if err != nil {
 				return 0, []FileSummary{}, err
 			}

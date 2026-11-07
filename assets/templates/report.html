@@ -122,7 +122,7 @@
   <script id="template-alert" type="text/x-handlebars-template">
       <div class="notification is-warning">
           <button class="delete"></button>
-          {{{message}}}
+          {{message}}
       </div>
     </div>
   </script>
@@ -203,6 +203,7 @@
   </script>
   <script>
   var loading = [[if .loading]] true [[ else ]] false [[end]];
+  var forceRefresh = [[if .forceRefresh]] true [[else]] false [[end]];
   var response = [[if .loading]] false [[else]] [[.response]] [[end]];
   </script>
   <script type="text/javascript">
@@ -324,7 +325,6 @@
       loading = true;
       var $form = $(this),
           url = $form.attr("action"),
-          method = $form.attr("method"),
           data = {};
         $form.serializeArray().map(function(x){data[x.name] = x.value;});
 
@@ -334,24 +334,46 @@
         }
 
         $("#check_form .button").addClass("is-loading");
-      $.ajax({
-          type: getRequest ? "GET" : "POST",
-          url: url,
-          data: data,
-          dataType: "json"
-      }).fail(function(xhr, status, err){
-          alertMessage("There was an error processing your request: " + xhr.responseText);
-      }).done(function(data, textStatus, jqXHR){
-          if (data.redirect) {
-              location.replace(data.redirect);
-          }
-      }).always(function(){
-          loading = false;
-          $("a.refresh-button").removeClass("is-loading");
-          $("#check_form .button").removeClass("is-loading");
-          $(".container-loading").slideUp();
-      });
-      return false;
+        var requestUrl = url + (getRequest && forceRefresh ? "?refresh=1" : "");
+        var keepLoading = false;
+        var sendRequest = function(){
+          $.ajax({
+              type: getRequest ? "GET" : "POST",
+              url: requestUrl,
+              data: data,
+              dataType: "json"
+          }).fail(function(xhr, status, err){
+              keepLoading = false;
+              alertMessage("There was an error processing your request: " + xhr.responseText);
+          }).done(function(data){
+              if (data.pending) {
+                  keepLoading = true;
+                  window.setTimeout(sendRequest, data.retry_after_ms || 2000);
+                  return;
+              }
+              keepLoading = false;
+              if (data.report) {
+                  forceRefresh = false;
+                  if (data.redirect) {
+                      window.history.replaceState({}, "", data.redirect);
+                      $("#check_form input[name=repo]").val(data.report.repo);
+                  }
+                  populateResults(data.report);
+              } else if (data.redirect) {
+                  location.replace(data.redirect);
+              }
+          }).always(function(){
+              if (keepLoading) {
+                  return;
+              }
+              loading = false;
+              $("a.refresh-button").removeClass("is-loading");
+              $("#check_form .button").removeClass("is-loading");
+              $(".container-loading").slideUp();
+          });
+        };
+        sendRequest();
+        return false;
     };
 
     var hideResults = function(){

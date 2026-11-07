@@ -23,8 +23,9 @@ func (gh *GRCHandler) ReportHandler(w http.ResponseWriter, r *http.Request, db *
 		return
 	}
 
+	forceRefresh := r.URL.Query().Get("wait") == "1"
 	resp, err := getFromCache(db, repo)
-	needToLoad := false
+	needToLoad := forceRefresh
 	if err != nil {
 		switch err.(type) {
 		case notFoundError:
@@ -46,6 +47,7 @@ func (gh *GRCHandler) ReportHandler(w http.ResponseWriter, r *http.Request, db *
 		"repo":                 repo,
 		"response":             string(respBytes),
 		"loading":              needToLoad,
+		"forceRefresh":         forceRefresh,
 		"domain":               domain,
 		"google_analytics_key": googleAnalyticsKey,
 	}); err != nil {

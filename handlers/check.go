@@ -5,51 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"net/http"
 	"strings"
 
 	"github.com/dgraph-io/badger/v2"
-	"github.com/gojp/goreportcard/download"
 )
 
 const (
 	// RepoPrefix is the badger prefix for repos
 	RepoPrefix string = "repos-"
 )
-
-// CheckHandler handles the request for checking a repo
-func CheckHandler(w http.ResponseWriter, r *http.Request, db *badger.DB) {
-	w.Header().Set("Content-Type", "application/json")
-
-	repo := download.Clean(r.FormValue("repo"))
-
-	c := download.NewProxyClient("https://proxy.golang.org")
-	moduleName, err := c.ModuleName(repo)
-	if err != nil {
-		log.Println("ERROR: could not get module name:", err)
-	}
-
-	if moduleName != "" {
-		repo = moduleName
-	}
-
-	log.Printf("Checking repo %q...", repo)
-
-	forceRefresh := r.Method != "GET" // if this is a GET request, try to fetch from cached version in badger first
-	_, err = newChecksResp(db, repo, forceRefresh)
-	if err != nil {
-		log.Println("ERROR: from newChecksResp:", err)
-		http.Error(w, "Could not analyze the repository: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	b, err := json.Marshal(map[string]string{"redirect": "/report/" + repo})
-	if err != nil {
-		log.Println("JSON marshal error:", err)
-	}
-	w.WriteHeader(http.StatusOK)
-	w.Write(b)
-}
 
 func updateHighScores(txn *badger.Txn, resp checksResp, repo string) error {
 	// check if we need to update the high score list
