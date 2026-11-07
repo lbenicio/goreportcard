@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.0.7] - 2026-11-07
+
+### Fixed
+- Generate README badges and report links with the current `goreportcard.lbenicio.dev` host instead of the retired `goreportcard.com` host.
+
 ## [1.0.6] - 2026-11-07
 
 ### Changed
