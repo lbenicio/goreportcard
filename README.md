@@ -2,24 +2,6 @@
 
 A web application that generates a report on the quality of an open source Go project. It uses several measures, including `gofmt`, `go vet`, `go lint` and `gocyclo`. To get a report on your own project, try [goreportcard.com](https://goreportcard.com).
 
-### Sponsors
-
-Support us over on [Patreon](https://www.patreon.com/goreportcard)!
-
-<a href="https://www.dotcom-monitor.com/sponsoring-open-source-projects/"><img src="https://goreportcard.com/assets/dotcom-monitor-logo-brightGB.svg" width="50%" height="50%"></a>
-
-<a href="https://www.bairesdev.com/sponsoring-open-source-projects/"><img src="https://goreportcard.com/assets/bairesdev.png" width="50%" height="50%"></a>
-
-<a href="https://www.digitalocean.com?utm_medium=opensource&utm_source=goreportcard"><img src="https://goreportcard.com/assets/digitalocean.svg" width="50%" height="50%"></a>
-
-- [Cody Wood](https://www.linkedin.com/in/sprkyco/)
-- Pascal Wenger
-- Jonas Kwiedor
-- [PhotoPrism](https://photoprism.app)
-- Kia Farhang
-- [Patrick DeVivo](https://twitter.com/patrickdevivo) ([MergeStat](https://github.com/mergestat/mergestat))
-- [Alexis Geoffrey](https://github.com/alexisgeoffrey)
-
 ### Installation
 
 ```
