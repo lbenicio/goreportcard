@@ -76,7 +76,19 @@ func TestReportHandlerRendersPollingTemplate(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d: %s", response.Code, http.StatusOK, response.Body.String())
 	}
-	assertMaintainerUI(t, response.Body.String())
+	body := response.Body.String()
+	assertMaintainerUI(t, body)
+	for _, want := range []string{
+		`image_url: "https://goreportcard.lbenicio.dev/badge/"`,
+		`url: "https://goreportcard.lbenicio.dev/report/"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("report HTML does not contain generated link %q", want)
+		}
+	}
+	if strings.Contains(body, `https://goreportcard.com/badge/`) {
+		t.Error("generated badge URL still points at the retired goreportcard.com host")
+	}
 	for _, want := range []string{"var forceRefresh =  true ", "data.pending", "refresh=1", "{{message}}"} {
 		if !strings.Contains(response.Body.String(), want) {
 			t.Errorf("report HTML does not contain %q", want)
