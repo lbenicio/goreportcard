@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lbenicio/goreportcard/check"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/lbenicio/goreportcard/check"
 )
 
 const (

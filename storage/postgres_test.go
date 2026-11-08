@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lbenicio/goreportcard/check"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/lbenicio/goreportcard/check"
 )
 
 func TestReportJSONKeepsLegacyGradeField(t *testing.T) {
