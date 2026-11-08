@@ -4,10 +4,11 @@
 
 ### Added
 - Add optional Redis report caching through `REDIS_URL`, with a five-minute TTL, PostgreSQL as the source of truth, and PostgreSQL fallback when Redis is unavailable.
-- Upload test coverage reports to Codecov.
+- Add Codecov coverage reporting and project status badges for the report, coverage, and license.
 
 ### Changed
-- Install `staticcheck` with the development tools and rename the CodeQL workflow to `codeql.yml`.
+- Install `staticcheck` with the development tools, limit Codecov runs to relevant branches and changes, and rename the CodeQL workflow to `codeql.yml`.
+- Refactor `GoTool` and its package/diagnostic helpers to keep analyzer functions below the gocyclo warning threshold.
 
 ## [1.1.0] - 2026-11-08
 
