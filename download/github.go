@@ -11,7 +11,9 @@ import (
 	"time"
 )
 
-const githubCloneTimeout = 10 * time.Minute
+var githubCloneTimeout = 10 * time.Minute
+
+var githubMkdirAll = os.MkdirAll
 
 func parseGitHubRepository(path string) (owner, repo string, err error) {
 	path = strings.TrimSpace(Clean(path))
@@ -46,7 +48,7 @@ func downloadGitHubRepository(path string) (downloaded DownloadedModule, retErr 
 	if err != nil {
 		return DownloadedModule{}, err
 	}
-	if err := os.MkdirAll(reposDir, 0o755); err != nil {
+	if err := githubMkdirAll(reposDir, 0o755); err != nil {
 		return DownloadedModule{}, err
 	}
 
@@ -57,15 +59,11 @@ func downloadGitHubRepository(path string) (downloaded DownloadedModule, retErr 
 	tempRootName := filepath.Base(tempRoot)
 	keep := false
 	defer func() {
-		if !keep {
-			if err := removeModuleDir(tempRootName); retErr == nil && err != nil {
-				retErr = err
-			}
-		}
+		removeModuleDirUnlessKept(tempRootName, keep, &retErr)
 	}()
 
 	checkoutParent := filepath.Join(tempRoot, "github.com", owner)
-	if err := os.MkdirAll(checkoutParent, 0o755); err != nil {
+	if err := githubMkdirAll(checkoutParent, 0o755); err != nil {
 		return DownloadedModule{}, err
 	}
 	checkoutDir := filepath.Join(checkoutParent, repo)

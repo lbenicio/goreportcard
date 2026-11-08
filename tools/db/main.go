@@ -15,11 +15,21 @@ var (
 	deleteRepoName       = flag.String("deleterepo", "", "repository path to delete from PostgreSQL")
 	removeDuplicatesFlag = flag.Bool("removeduplicates", false, "remove non-lowercase duplicates when lowercase paths exist")
 	dryRun               = flag.Bool("dryrun", false, "dry run mode")
+	openRepositoryStore  = func(ctx context.Context, databaseURL string) (repositoryAdminStore, error) {
+		return storage.OpenPostgres(ctx, databaseURL)
+	}
+	fatalLog = log.Fatal
 )
+
+type repositoryAdminStore interface {
+	DeleteRepository(context.Context, string) (bool, error)
+	DuplicateRepositoryPaths(context.Context) ([]string, error)
+	Close() error
+}
 
 func main() {
 	if err := run(); err != nil {
-		log.Fatal(err)
+		fatalLog(err)
 	}
 }
 
@@ -32,7 +42,7 @@ func run() error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
-	store, err := storage.OpenPostgres(ctx, databaseURL)
+	store, err := openRepositoryStore(ctx, databaseURL)
 	if err != nil {
 		return err
 	}
@@ -51,7 +61,7 @@ func run() error {
 	return nil
 }
 
-func deleteRepo(ctx context.Context, store *storage.PostgresStore, repo string, dryRun bool) error {
+func deleteRepo(ctx context.Context, store repositoryAdminStore, repo string, dryRun bool) error {
 	if dryRun {
 		log.Println("would delete", repo)
 		return nil
@@ -66,7 +76,7 @@ func deleteRepo(ctx context.Context, store *storage.PostgresStore, repo string, 
 	return nil
 }
 
-func removeDuplicates(ctx context.Context, store *storage.PostgresStore, dryRun bool) error {
+func removeDuplicates(ctx context.Context, store repositoryAdminStore, dryRun bool) error {
 	duplicates, err := store.DuplicateRepositoryPaths(ctx)
 	if err != nil {
 		return err

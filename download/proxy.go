@@ -14,6 +14,14 @@ import (
 	"golang.org/x/mod/module"
 )
 
+var (
+	escapeModuleVersion = module.EscapeVersion
+	isLocalModulePath   = filepath.IsLocal
+	splitModuleFile     = strings.Split
+	closeProxyZipFile   = func(file *os.File) error { return file.Close() }
+	removeProxyZipFile  = os.Remove
+)
+
 const (
 	reposDir = "_repos/src"
 )
@@ -90,7 +98,7 @@ func (c *ProxyClient) ModuleName(path string) (string, error) {
 	if err := module.Check(path, ver); err != nil {
 		return "", fmt.Errorf("invalid module version: %w", err)
 	}
-	escapedVersion, err := module.EscapeVersion(ver)
+	escapedVersion, err := escapeModuleVersion(ver)
 	if err != nil {
 		return "", fmt.Errorf("invalid module version: %w", err)
 	}
@@ -111,7 +119,7 @@ func (c *ProxyClient) ModuleName(path string) (string, error) {
 		return "", &proxyResponseError{URL: u, StatusCode: resp.StatusCode}
 	}
 
-	sp := strings.Split(string(b), "\n")
+	sp := splitModuleFile(string(b), "\n")
 	if len(sp) == 0 {
 		return "", fmt.Errorf("empty go.mod")
 	}
@@ -189,6 +197,27 @@ func removeModuleDir(path string) (err error) {
 	return root.RemoveAll(path)
 }
 
+func removeModuleDirUnlessKept(path string, keep bool, retErr *error) {
+	if !keep {
+		if err := removeModuleDir(path); *retErr == nil && err != nil {
+			*retErr = err
+		}
+	}
+}
+
+func cleanupProxyZipFile(zipFile *os.File, zipPath string, zipClosed, zipRemoved bool, retErr *error) {
+	if !zipClosed {
+		if err := closeProxyZipFile(zipFile); *retErr == nil && err != nil {
+			*retErr = err
+		}
+	}
+	if !zipRemoved {
+		if err := removeProxyZipFile(zipPath); *retErr == nil && !os.IsNotExist(err) && err != nil {
+			*retErr = err
+		}
+	}
+}
+
 // ProxyDownload downloads a module from the Go module proxy into the repository cache.
 func (c *ProxyClient) ProxyDownload(path string) (downloaded DownloadedModule, retErr error) {
 	escapedPath, err := module.EscapePath(path)
@@ -203,12 +232,12 @@ func (c *ProxyClient) ProxyDownload(path string) (downloaded DownloadedModule, r
 	if err := module.Check(path, ver); err != nil {
 		return DownloadedModule{}, fmt.Errorf("invalid module version: %w", err)
 	}
-	escapedVersion, err := module.EscapeVersion(ver)
+	escapedVersion, err := escapeModuleVersion(ver)
 	if err != nil {
 		return DownloadedModule{}, fmt.Errorf("invalid module version: %w", err)
 	}
 	moduleDir := escapedPath + "@" + escapedVersion
-	if !filepath.IsLocal(moduleDir) {
+	if !isLocalModulePath(moduleDir) {
 		return DownloadedModule{}, fmt.Errorf("invalid module download path")
 	}
 
@@ -233,33 +262,20 @@ func (c *ProxyClient) ProxyDownload(path string) (downloaded DownloadedModule, r
 	zipClosed := false
 	zipRemoved := false
 	defer func() {
-		if !zipClosed {
-			if err := zipFile.Close(); retErr == nil && err != nil {
-				retErr = err
-			}
-		}
-		if !zipRemoved {
-			if err := os.Remove(zipPath); retErr == nil && !os.IsNotExist(err) && err != nil {
-				retErr = err
-			}
-		}
+		cleanupProxyZipFile(zipFile, zipPath, zipClosed, zipRemoved, &retErr)
 	}()
 
 	if _, err := io.Copy(zipFile, resp.Body); err != nil {
 		return DownloadedModule{}, err
 	}
-	if err := zipFile.Close(); err != nil {
+	if err := closeProxyZipFile(zipFile); err != nil {
 		return DownloadedModule{}, err
 	}
 	zipClosed = true
 
 	keepModule := false
 	defer func() {
-		if !keepModule {
-			if err := removeModuleDir(moduleDir); retErr == nil && err != nil {
-				retErr = err
-			}
-		}
+		removeModuleDirUnlessKept(moduleDir, keepModule, &retErr)
 	}()
 
 	cmd := exec.Command("unzip", "-o", zipPath, "-d", reposDir)
@@ -267,7 +283,7 @@ func (c *ProxyClient) ProxyDownload(path string) (downloaded DownloadedModule, r
 		return DownloadedModule{}, err
 	}
 
-	if err := os.Remove(zipPath); err != nil {
+	if err := removeProxyZipFile(zipPath); err != nil {
 		return DownloadedModule{}, err
 	}
 	zipRemoved = true

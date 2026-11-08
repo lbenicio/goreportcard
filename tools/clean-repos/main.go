@@ -8,13 +8,26 @@ import (
 	"time"
 )
 
-var real = flag.Bool("real", false, "run the deletions")
+var (
+	real          = flag.Bool("real", false, "run the deletions")
+	readDirectory = os.ReadDir
+	entryInfo     = func(entry os.DirEntry) (os.FileInfo, error) { return entry.Info() }
+	removePath    = os.RemoveAll
+	directorySize = DirSize
+	fatalLog      = log.Fatal
+)
 
 func main() {
 	flag.Parse()
-	files, err := os.ReadDir("_repos/src")
+	if err := run(); err != nil {
+		fatalLog(err)
+	}
+}
+
+func run() error {
+	files, err := readDirectory("_repos/src")
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	for _, f := range files {
@@ -22,41 +35,41 @@ func main() {
 			continue
 		}
 		if f.IsDir() {
-			dirs, err := os.ReadDir("_repos/src/" + f.Name())
+			dirs, err := readDirectory("_repos/src/" + f.Name())
 			if err != nil {
-				log.Fatal(err)
+				return err
 			}
 			for _, d := range dirs {
-				repos, err := os.ReadDir("_repos/src/" + f.Name() + "/" + d.Name())
+				repos, err := readDirectory("_repos/src/" + f.Name() + "/" + d.Name())
 				if err != nil {
-					log.Fatal(err)
+					return err
 				}
 				for _, repo := range repos {
 					path := "_repos/src/" + f.Name() + "/" + d.Name() + "/" + repo.Name()
 
-					info, err := d.Info()
+					info, err := entryInfo(d)
 					if err != nil {
-						log.Fatal(err)
+						return err
 					}
 
 					if time.Since(info.ModTime()) > 30*24*time.Hour {
 						if *real {
 							log.Printf("Deleting %s (repo is old)...", path)
-							os.RemoveAll(path)
+							removePath(path)
 							continue
 						} else {
 							log.Printf("Would delete %s (repo is old)", path)
 						}
 					}
 
-					size, err := DirSize(path)
+					size, err := directorySize(path)
 					if err != nil {
-						log.Fatal(err)
+						return err
 					}
 					if size < 20*1000*1000 {
 						if *real {
 							log.Printf("Deleting %s (dir size < 20M)...", path)
-							os.RemoveAll(path)
+							removePath(path)
 						} else {
 							log.Printf("Would delete %s (dir size < 20M)", path)
 						}
@@ -65,6 +78,7 @@ func main() {
 			}
 		}
 	}
+	return nil
 }
 
 // DirSize returns the size of a directory

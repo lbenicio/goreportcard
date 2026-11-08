@@ -34,11 +34,15 @@ type PostgresStore struct {
 
 // OpenPostgres opens a PostgreSQL pool, verifies connectivity, and applies migrations.
 func OpenPostgres(ctx context.Context, dsn string) (*PostgresStore, error) {
+	return openPostgres(ctx, dsn, sql.Open)
+}
+
+func openPostgres(ctx context.Context, dsn string, openDB func(string, string) (*sql.DB, error)) (*PostgresStore, error) {
 	if strings.TrimSpace(dsn) == "" {
 		return nil, errors.New("DATABASE_URL is required")
 	}
 
-	db, err := sql.Open("pgx", dsn)
+	db, err := openDB("pgx", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open PostgreSQL connection: %w", err)
 	}
@@ -67,7 +71,11 @@ func (s *PostgresStore) Close() error {
 
 // Migrate applies embedded, versioned SQL migrations atomically.
 func (s *PostgresStore) Migrate(ctx context.Context) error {
-	files, err := fs.Glob(migrationFiles, "migrations/*.sql")
+	return s.migrate(ctx, migrationFiles)
+}
+
+func (s *PostgresStore) migrate(ctx context.Context, migrations fs.FS) error {
+	files, err := fs.Glob(migrations, "migrations/*.sql")
 	if err != nil {
 		return fmt.Errorf("list PostgreSQL migrations: %w", err)
 	}
@@ -103,14 +111,11 @@ func (s *PostgresStore) Migrate(ctx context.Context) error {
 		}
 		applied[version] = struct{}{}
 	}
+	// database/sql closes rows at EOF and reports driver close failures through Rows.Err.
 	if err := rows.Err(); err != nil {
 		rows.Close()
 		return fmt.Errorf("read applied migrations: %w", err)
 	}
-	if err := rows.Close(); err != nil {
-		return fmt.Errorf("close applied migrations: %w", err)
-	}
-
 	for _, file := range files {
 		base := path.Base(file)
 		versionText := strings.SplitN(base, "_", 2)[0]
@@ -122,7 +127,7 @@ func (s *PostgresStore) Migrate(ctx context.Context) error {
 			continue
 		}
 
-		migration, err := migrationFiles.ReadFile(file)
+		migration, err := fs.ReadFile(migrations, file)
 		if err != nil {
 			return fmt.Errorf("read migration %q: %w", base, err)
 		}
@@ -205,14 +210,11 @@ func (s *PostgresStore) GetReport(ctx context.Context, repo string) (Report, err
 		checkIndexes[ordinal] = len(report.Checks)
 		report.Checks = append(report.Checks, score)
 	}
+	// database/sql closes rows at EOF and reports driver close failures through Rows.Err.
 	if err := rows.Err(); err != nil {
 		rows.Close()
 		return Report{}, fmt.Errorf("read checks for %q: %w", repo, err)
 	}
-	if err := rows.Close(); err != nil {
-		return Report{}, fmt.Errorf("close checks for %q: %w", repo, err)
-	}
-
 	fileIndexes := make(map[int]map[int]int)
 	rows, err = tx.QueryContext(ctx, `
 		SELECT check_ordinal, file_ordinal, filename, file_url
@@ -243,10 +245,6 @@ func (s *PostgresStore) GetReport(ctx context.Context, repo string) (Report, err
 		rows.Close()
 		return Report{}, fmt.Errorf("read files for %q: %w", repo, err)
 	}
-	if err := rows.Close(); err != nil {
-		return Report{}, fmt.Errorf("close files for %q: %w", repo, err)
-	}
-
 	rows, err = tx.QueryContext(ctx, `
 		SELECT check_ordinal, file_ordinal, line_number, error_string
 		FROM report_check_errors
@@ -277,10 +275,6 @@ func (s *PostgresStore) GetReport(ctx context.Context, repo string) (Report, err
 		rows.Close()
 		return Report{}, fmt.Errorf("read errors for %q: %w", repo, err)
 	}
-	if err := rows.Close(); err != nil {
-		return Report{}, fmt.Errorf("close errors for %q: %w", repo, err)
-	}
-
 	if err := tx.Commit(); err != nil {
 		return Report{}, fmt.Errorf("commit report read: %w", err)
 	}
@@ -581,12 +575,10 @@ func (s *PostgresStore) HighScores(ctx context.Context) (int64, []HighScore, err
 		}
 		scores = append(scores, score)
 	}
+	// database/sql closes rows at EOF and reports driver close failures through Rows.Err.
 	if err := rows.Err(); err != nil {
 		rows.Close()
 		return 0, nil, fmt.Errorf("read high scores: %w", err)
-	}
-	if err := rows.Close(); err != nil {
-		return 0, nil, fmt.Errorf("close high scores: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, nil, fmt.Errorf("commit high scores read: %w", err)

@@ -202,6 +202,10 @@ func handleChecksWithManager(w http.ResponseWriter, r *http.Request, db storage.
 		return
 	}
 
+	writeAnalysisJobStatus(w, manager, repo)
+}
+
+func writeAnalysisJobStatus(w http.ResponseWriter, manager *analysisManager, repo string) {
 	job, ok := manager.status(repo)
 	if !ok {
 		http.Error(w, "analysis job is no longer available; retry the request", http.StatusServiceUnavailable)

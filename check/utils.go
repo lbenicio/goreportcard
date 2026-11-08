@@ -24,15 +24,18 @@ var (
 // GoFiles returns a slice of Go filenames
 // in a given directory.
 func GoFiles(dir string) (filenames, skipped []string, err error) {
-	visit := func(fp string, fi os.FileInfo, err error) error {
+	visit := func(fp string, fi os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			fmt.Println(walkErr) // can't walk here,
+			if fp == dir {
+				return walkErr
+			}
+			return nil // but continue walking elsewhere
+		}
 		for _, skip := range skipDirs {
 			if strings.Contains(fp, fmt.Sprintf("/%s/", skip)) {
 				return nil
 			}
-		}
-		if err != nil {
-			fmt.Println(err) // can't walk here,
-			return nil       // but continue walking elsewhere
 		}
 		if fi.IsDir() {
 			return nil // not a file.  ignore.

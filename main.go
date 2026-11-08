@@ -27,9 +27,30 @@ var (
 	embedFS embed.FS
 )
 
+type closeableStore interface {
+	storage.Store
+	Close() error
+}
+
+var (
+	parseFlags = flag.Parse
+	fatal      = log.Fatal
+
+	openPostgresStore = func(ctx context.Context, dsn string) (closeableStore, error) {
+		return storage.OpenPostgres(ctx, dsn)
+	}
+	openRedisStore = func(ctx context.Context, store storage.Store, redisURL string) (closeableStore, error) {
+		return storage.OpenRedisCache(ctx, store, redisURL)
+	}
+	loadAssets = func() (fs.FS, error) {
+		return fs.Sub(embedFS, "assets")
+	}
+	listenAndServe = http.ListenAndServe
+)
+
 func makeHandler(db storage.Store, name string, fn func(http.ResponseWriter, *http.Request, storage.Store, string)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		validPath := regexp.MustCompile(fmt.Sprintf(`^/%s/([a-zA-Z0-9\-_\/\.~]+)$`, name))
+		validPath := regexp.MustCompile(fmt.Sprintf(`^/%s/([a-zA-Z0-9\-_\/\.~]*)$`, name))
 
 		m := validPath.FindStringSubmatch(r.URL.Path)
 		if m == nil {
@@ -77,6 +98,10 @@ type metrics struct {
 // setupMetrics creates custom Prometheus metrics for monitoring
 // application statistics.
 func setupMetrics() *metrics {
+	return setupMetricsWithRegisterer(prometheus.DefaultRegisterer)
+}
+
+func setupMetricsWithRegisterer(registerer prometheus.Registerer) *metrics {
 	m := &metrics{}
 	m.responseTimes = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
@@ -86,7 +111,7 @@ func setupMetrics() *metrics {
 		[]string{"endpoint"},
 	)
 
-	prometheus.MustRegister(m.responseTimes)
+	registerer.MustRegister(m.responseTimes)
 	return m
 }
 
@@ -106,24 +131,30 @@ func (m metrics) instrument(path string, h http.HandlerFunc) (string, http.Handl
 }
 
 func main() {
-	flag.Parse()
+	parseFlags()
+	if err := run(); err != nil {
+		fatal(err)
+	}
+}
+
+func run() error {
 	if err := os.MkdirAll("_repos/src/github.com", 0755); err != nil && !os.IsExist(err) {
-		log.Fatal("ERROR: could not create repos dir: ", err)
+		return fmt.Errorf("ERROR: could not create repos dir: %w", err)
 	}
 
 	startupCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	db, err := storage.OpenPostgres(startupCtx, os.Getenv("DATABASE_URL"))
+	db, err := openPostgresStore(startupCtx, os.Getenv("DATABASE_URL"))
 	if err != nil {
-		log.Fatal("ERROR: could not open PostgreSQL database: ", err)
+		return fmt.Errorf("ERROR: could not open PostgreSQL database: %w", err)
 	}
 	defer db.Close()
 
 	var appStore storage.Store = db
 	if redisURL := strings.TrimSpace(os.Getenv("REDIS_URL")); redisURL != "" {
-		redisStore, err := storage.OpenRedisCache(startupCtx, db, redisURL)
+		redisStore, err := openRedisStore(startupCtx, db, redisURL)
 		if err != nil {
-			log.Fatal("ERROR: could not configure Redis cache: ", err)
+			return fmt.Errorf("ERROR: could not configure Redis cache: %w", err)
 		}
 		defer func() {
 			if err := redisStore.Close(); err != nil {
@@ -133,26 +164,27 @@ func main() {
 		appStore = redisStore
 	}
 
-	assetsFS, err := fs.Sub(embedFS, "assets")
+	assetsFS, err := loadAssets()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	gh := handlers.GRCHandler{AssetsFS: http.FS(assetsFS)}
+	registry := prometheus.NewRegistry()
+	m := setupMetricsWithRegisterer(registry)
+	mux := http.NewServeMux()
 
-	m := setupMetrics()
+	mux.HandleFunc(m.instrument("/assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(assetsFS))).ServeHTTP))
+	mux.HandleFunc(m.instrument("/checks", injectStoreHandler(appStore, handlers.CheckHandler)))
+	mux.HandleFunc(m.instrument("/report/", makeHandler(appStore, "report", gh.ReportHandler)))
+	mux.HandleFunc(m.instrument("/badge/", makeHandler(appStore, "badge", handlers.BadgeHandler)))
+	mux.HandleFunc(m.instrument("/high_scores/", injectStoreHandler(appStore, gh.HighScoresHandler)))
+	mux.HandleFunc(m.instrument("/about/", gh.AboutHandler))
+	mux.HandleFunc(m.instrument("/sunset/", gh.SunsetHandler))
+	mux.HandleFunc(m.instrument("/", injectStoreHandler(appStore, gh.HomeHandler)))
 
-	http.HandleFunc(m.instrument("/assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(assetsFS))).ServeHTTP))
-	http.HandleFunc(m.instrument("/checks", injectStoreHandler(appStore, handlers.CheckHandler)))
-	http.HandleFunc(m.instrument("/report/", makeHandler(appStore, "report", gh.ReportHandler)))
-	http.HandleFunc(m.instrument("/badge/", makeHandler(appStore, "badge", handlers.BadgeHandler)))
-	http.HandleFunc(m.instrument("/high_scores/", injectStoreHandler(appStore, gh.HighScoresHandler)))
-	http.HandleFunc(m.instrument("/about/", gh.AboutHandler))
-	http.HandleFunc(m.instrument("/sunset/", gh.SunsetHandler))
-	http.HandleFunc(m.instrument("/", injectStoreHandler(appStore, gh.HomeHandler)))
-
-	http.Handle("/metrics", promhttp.Handler())
+	mux.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
 
 	log.Printf("Running on %s ...", *addr)
-	log.Fatal(http.ListenAndServe(*addr, nil))
+	return listenAndServe(*addr, mux)
 }

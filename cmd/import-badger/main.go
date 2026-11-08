@@ -21,9 +21,28 @@ type legacyRecentItem struct {
 	Repo string
 }
 
+type importerStore interface {
+	storage.Store
+	Close() error
+}
+
+type legacyRecentGetter interface {
+	Get([]byte) (*badger.Item, error)
+}
+
+var (
+	openPostgresStore = func(ctx context.Context, databaseURL string) (importerStore, error) {
+		return storage.OpenPostgres(ctx, databaseURL)
+	}
+	openLegacyBadger = func(path string) (*badger.DB, error) {
+		return badger.Open(badger.DefaultOptions(path).WithReadOnly(true).WithLogger(nil))
+	}
+	fatalLog = log.Fatal
+)
+
 func main() {
 	if err := run(); err != nil {
-		log.Fatal(err)
+		fatalLog(err)
 	}
 }
 
@@ -41,13 +60,13 @@ func run() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 
-	postgres, err := storage.OpenPostgres(ctx, databaseURL)
+	postgres, err := openPostgresStore(ctx, databaseURL)
 	if err != nil {
 		return err
 	}
 	defer postgres.Close()
 
-	legacy, err := badger.Open(badger.DefaultOptions(*badgerPath).WithReadOnly(true).WithLogger(nil))
+	legacy, err := openLegacyBadger(*badgerPath)
 	if err != nil {
 		return fmt.Errorf("open legacy Badger database: %w", err)
 	}
@@ -115,19 +134,23 @@ func importReports(ctx context.Context, legacy *badger.DB, postgres storage.Stor
 func readLegacyRecent(legacy *badger.DB) ([]legacyRecentItem, error) {
 	var recent []legacyRecentItem
 	err := legacy.View(func(txn *badger.Txn) error {
-		item, err := txn.Get([]byte("recent"))
-		if errors.Is(err, badger.ErrKeyNotFound) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		return item.Value(func(value []byte) error {
-			return json.Unmarshal(value, &recent)
-		})
+		return readLegacyRecentTransaction(txn, &recent)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("read legacy recent repositories: %w", err)
 	}
 	return recent, nil
+}
+
+func readLegacyRecentTransaction(txn legacyRecentGetter, recent *[]legacyRecentItem) error {
+	item, err := txn.Get([]byte("recent"))
+	if errors.Is(err, badger.ErrKeyNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return item.Value(func(value []byte) error {
+		return json.Unmarshal(value, recent)
+	})
 }

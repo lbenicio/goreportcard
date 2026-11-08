@@ -12,10 +12,13 @@ import (
 )
 
 var (
-	dir     = flag.String("d", ".", "Root directory of your Go application")
-	verbose = flag.Bool("v", false, "Verbose output")
-	th      = flag.Float64("t", 0, "Threshold of failure command")
-	jsn     = flag.Bool("j", false, "JSON output. The binary will always exit with code 0")
+	dir         = flag.String("d", ".", "Root directory of your Go application")
+	verbose     = flag.Bool("v", false, "Verbose output")
+	th          = flag.Float64("t", 0, "Threshold of failure command")
+	jsn         = flag.Bool("j", false, "JSON output. The binary will always exit with code 0")
+	runCheck    = check.Run
+	exitProcess = os.Exit
+	fatalf      = log.Fatalf
 )
 
 // dotPrintf fills in the blank space between two strings with dots. The total
@@ -34,15 +37,17 @@ func dotPrintf(fullLen int, lfStr, rtFmtStr string, args ...interface{}) {
 func main() {
 	flag.Parse()
 
-	result, err := check.Run(*dir, true)
+	result, err := runCheck(*dir, true)
 	if err != nil {
-		log.Fatalf("Fatal error checking %s: %s", *dir, err.Error())
+		fatalf("Fatal error checking %s: %s", *dir, err.Error())
+		return
 	}
 
 	if *jsn {
 		marshalledResults, _ := json.Marshal(result)
 		fmt.Println(string(marshalledResults))
-		os.Exit(0)
+		exitProcess(0)
+		return
 	}
 
 	dotPrintf(24, "Grade", "%s %.1f%%", result.Grade, result.Average*100)
@@ -62,6 +67,7 @@ func main() {
 	}
 
 	if result.Average*100 < *th {
-		os.Exit(1)
+		exitProcess(1)
+		return
 	}
 }
