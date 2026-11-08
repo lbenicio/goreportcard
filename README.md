@@ -1,11 +1,11 @@
 # Go Report Card
 
-A web application that generates a report on the quality of an open source Go project. It uses several measures, including `gofmt`, `go vet`, `go lint` and `gocyclo`. To get a report on your own project, try [goreportcard.com](https://goreportcard.com).
+A web application that generates a report on the quality of an open source Go project. It uses several measures, including `gofmt`, `go vet`, `go lint` and `gocyclo`. To get a report on your own project, try [goreportcard.lbenicio.dev](https://goreportcard.lbenicio.dev).
 
 ### Installation
 
 ```
-git clone https://github.com/gojp/goreportcard.git
+git clone https://github.com/lbenicio/goreportcard.git
 cd goreportcard
 make install
 ```
@@ -87,7 +87,7 @@ misspell ............ 100%
 
 ### Contributing
 
-Go Report Card is an open source project run by volunteers, and contributions are welcome! Check out the [Issues](https://github.com/gojp/goreportcard/issues) page to see if your idea has already been mentioned. Feel free to raise an issue or submit a pull request.
+Go Report Card is an open source project run by volunteers, and contributions are welcome! Check out the [Issues](https://github.com/lbenicio/goreportcard/issues) page to see if your idea has already been mentioned. Feel free to raise an issue or submit a pull request.
 
 ### Academic Citation
 
