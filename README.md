@@ -1,5 +1,9 @@
 # Go Report Card
 
+[![Go Report Card](https://goreportcard.lbenicio.dev/badge/github.com/gojp/goreportcard)](https://goreportcard.lbenicio.dev/report/github.com/gojp/goreportcard)
+[![Coverage Status](https://codecov.io/github/lbenicio/goreportcard/coverage.svg?branch=main)](https://codecov.io/github/lbenicio/goreportcard?branch=main)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/kubernetes/dashboard/blob/master/LICENSE.txt)
+
 A web application that generates a report on the quality of an open source Go project. It uses several measures, including `gofmt`, `go vet`, `go lint` and `gocyclo`. To get a report on your own project, try [goreportcard.lbenicio.dev](https://goreportcard.lbenicio.dev).
 
 ### Installation
