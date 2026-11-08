@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/gojp/goreportcard/handlers"
@@ -116,6 +117,21 @@ func main() {
 	if err != nil {
 		log.Fatal("ERROR: could not open PostgreSQL database: ", err)
 	}
+	defer db.Close()
+
+	var appStore storage.Store = db
+	if redisURL := strings.TrimSpace(os.Getenv("REDIS_URL")); redisURL != "" {
+		redisStore, err := storage.OpenRedisCache(startupCtx, db, redisURL)
+		if err != nil {
+			log.Fatal("ERROR: could not configure Redis cache: ", err)
+		}
+		defer func() {
+			if err := redisStore.Close(); err != nil {
+				log.Printf("ERROR: could not close Redis cache: %v", err)
+			}
+		}()
+		appStore = redisStore
+	}
 
 	assetsFS, err := fs.Sub(embedFS, "assets")
 	if err != nil {
@@ -124,18 +140,16 @@ func main() {
 
 	gh := handlers.GRCHandler{AssetsFS: http.FS(assetsFS)}
 
-	defer db.Close()
-
 	m := setupMetrics()
 
 	http.HandleFunc(m.instrument("/assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(assetsFS))).ServeHTTP))
-	http.HandleFunc(m.instrument("/checks", injectStoreHandler(db, handlers.CheckHandler)))
-	http.HandleFunc(m.instrument("/report/", makeHandler(db, "report", gh.ReportHandler)))
-	http.HandleFunc(m.instrument("/badge/", makeHandler(db, "badge", handlers.BadgeHandler)))
-	http.HandleFunc(m.instrument("/high_scores/", injectStoreHandler(db, gh.HighScoresHandler)))
+	http.HandleFunc(m.instrument("/checks", injectStoreHandler(appStore, handlers.CheckHandler)))
+	http.HandleFunc(m.instrument("/report/", makeHandler(appStore, "report", gh.ReportHandler)))
+	http.HandleFunc(m.instrument("/badge/", makeHandler(appStore, "badge", handlers.BadgeHandler)))
+	http.HandleFunc(m.instrument("/high_scores/", injectStoreHandler(appStore, gh.HighScoresHandler)))
 	http.HandleFunc(m.instrument("/about/", gh.AboutHandler))
 	http.HandleFunc(m.instrument("/sunset/", gh.SunsetHandler))
-	http.HandleFunc(m.instrument("/", injectStoreHandler(db, gh.HomeHandler)))
+	http.HandleFunc(m.instrument("/", injectStoreHandler(appStore, gh.HomeHandler)))
 
 	http.Handle("/metrics", promhttp.Handler())
 
