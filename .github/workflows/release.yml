@@ -195,6 +195,9 @@ jobs:
     permissions:
       contents: write
       packages: write
+    outputs:
+      manifests_published: ${{ steps.publish_images.outputs.published }}
+      release_created: ${{ steps.create_release.outputs.created }}
     steps:
       - name: Set up Buildx for manifest assembly
         uses: docker/setup-buildx-action@v4.4.1
@@ -213,6 +216,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish multi-platform tags
+        id: publish_images
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
           GHCR_IMAGE: ghcr.io/${{ github.repository }}
@@ -226,13 +230,12 @@ jobs:
               --tag "${image}:${VERSION}" \
               "${image}:${VERSION}-amd64" \
               "${image}:${VERSION}-arm64"
-            docker buildx imagetools create \
-              --tag "${image}:latest" \
-              "${image}:${VERSION}-amd64" \
-              "${image}:${VERSION}-arm64"
+            docker buildx imagetools create --tag "${image}:latest" "${image}:${VERSION}-amd64" "${image}:${VERSION}-arm64"
           done
+          printf 'published=true\n' >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub release from changelog
+        id: create_release
         env:
           GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
@@ -250,7 +253,113 @@ jobs:
           Path(os.environ["RUNNER_TEMP"], "release-notes.md").write_bytes(notes)
           PY
 
-          gh release create "$VERSION" \
-            --target "$GITHUB_SHA" \
-            --title "v${VERSION}" \
-            --notes-file "$RUNNER_TEMP/release-notes.md"
+          gh release create "$VERSION" --target "$GITHUB_SHA" --title "v${VERSION}" --notes-file "$RUNNER_TEMP/release-notes.md"
+          printf 'created=true\n' >> "$GITHUB_OUTPUT"
+
+  summary:
+    if: always()
+    needs:
+      - reject-non-main
+      - prepare
+      - build
+      - publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Write workflow run summary
+        shell: bash
+        env:
+          BRANCH_GATE_RESULT: ${{ needs.reject-non-main.result }}
+          PREPARE_RESULT: ${{ needs.prepare.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          PUBLISH_RESULT: ${{ needs.publish.result }}
+          MANIFESTS_PUBLISHED: ${{ needs.publish.outputs.manifests_published }}
+          RELEASE_CREATED: ${{ needs.publish.outputs.release_created }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          RELEASE_NOTES_B64: ${{ needs.prepare.outputs.release_notes_b64 }}
+          GHCR_IMAGE: ghcr.io/${{ github.repository }}
+          DOCKER_IMAGE: docker.io/${{ secrets.DOCKER_USER }}/goreportcard
+          REPOSITORY: ${{ github.repository }}
+          REF_NAME: ${{ github.ref_name }}
+          ACTOR: ${{ github.actor }}
+          COMMIT_SHA: ${{ github.sha }}
+          SERVER_URL: ${{ github.server_url }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          status_mark() {
+            case "$1" in
+              success) printf '✅ Passed' ;;
+              failure) printf '❌ Failed' ;;
+              cancelled) printf '🛑 Cancelled' ;;
+              skipped) printf '⏭️ Skipped' ;;
+              *) printf '⚪ Not run' ;;
+            esac
+          }
+
+          branch_gate="$(status_mark "$BRANCH_GATE_RESULT")"
+          if [[ "$BRANCH_GATE_RESULT" == "skipped" && "$REF_NAME" == "main" ]]; then
+            branch_gate="✅ Main branch selected (non-main guard skipped)"
+          fi
+
+          if [[ "$MANIFESTS_PUBLISHED" == "true" && "$RELEASE_CREATED" == "true" ]]; then
+            title="## ✅ Release workflow completed"
+          else
+            title="## ❌ Release workflow did not complete"
+          fi
+
+          {
+            printf '%s\n\n' "$title"
+            if [[ -n "$VERSION" ]]; then
+              printf '**Version:** \x60v%s\x60\n\n' "$VERSION"
+            else
+              printf '**Version:** Not determined (prepare job %s)\n\n' "$PREPARE_RESULT"
+            fi
+
+            printf '| Stage | Result |\n|---|---|\n'
+            printf '| Branch gate | %s |\n' "$branch_gate"
+            printf '| Prepare | %s |\n' "$(status_mark "$PREPARE_RESULT")"
+            printf '| Native amd64/arm64 builds | %s |\n' "$(status_mark "$BUILD_RESULT")"
+            if [[ "$MANIFESTS_PUBLISHED" == "true" ]]; then
+              manifest_status='✅ Published'
+            else
+              manifest_status="$(status_mark "$PUBLISH_RESULT")"
+            fi
+            if [[ "$RELEASE_CREATED" == "true" ]]; then
+              release_status='✅ Created'
+            else
+              release_status="$(status_mark "$PUBLISH_RESULT")"
+            fi
+            printf '| Multi-platform image tags | %s |\n' "$manifest_status"
+            printf '| GitHub release | %s |\n\n' "$release_status"
+
+            if [[ "$RELEASE_CREATED" == "true" && -n "$VERSION" ]]; then
+              printf '**GitHub release:** [v%s](%s/%s/releases/tag/%s)\n\n' \
+                "$VERSION" "$SERVER_URL" "$REPOSITORY" "$VERSION"
+            fi
+
+            printf '### Container images\n\n'
+            if [[ "$MANIFESTS_PUBLISHED" == "true" && -n "$VERSION" ]]; then
+              printf -- '- GHCR: \x60%s:%s\x60 and \x60%s:latest\x60\n' "$GHCR_IMAGE" "$VERSION" "$GHCR_IMAGE"
+              printf -- '- Docker Hub: \x60%s:%s\x60 and \x60%s:latest\x60\n' "$DOCKER_IMAGE" "$VERSION" "$DOCKER_IMAGE"
+              printf -- '- Platforms: \x60linux/amd64\x60, \x60linux/arm64\x60\n\n'
+            elif [[ "$BUILD_RESULT" == "success" && -n "$VERSION" ]]; then
+              printf 'Native architecture builds completed, but multi-platform tags were not confirmed. Check the publish job logs.\n\n'
+            else
+              printf 'Images were not published successfully. Check the build and publish job logs.\n\n'
+            fi
+
+            if [[ -n "$RELEASE_NOTES_B64" ]]; then
+              printf '### Changelog notes\n\n'
+              printf '%s' "$RELEASE_NOTES_B64" | base64 --decode
+              printf '\n\n'
+            fi
+
+            printf '### Run details\n\n'
+            printf -- '- **Branch:** \x60%s\x60\n' "$REF_NAME"
+            printf -- '- **Commit:** [\x60%s\x60](%s/%s/commit/%s)\n' "${COMMIT_SHA:0:7}" "$SERVER_URL" "$REPOSITORY" "$COMMIT_SHA"
+            printf -- '- **Triggered by:** \x60%s\x60\n' "$ACTOR"
+            printf -- '- [View workflow run](%s)\n' "$RUN_URL"
+          } >> "$GITHUB_STEP_SUMMARY"
