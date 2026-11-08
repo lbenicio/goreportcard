@@ -120,7 +120,7 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: |
-            ghcr.io/${{ github.repository }}
+            ghcr.io/${{ github.actor }}/goreportcard
             docker.io/${{ secrets.DOCKER_USER }}/goreportcard
           tags: |
             type=raw,value=${{ needs.prepare.outputs.version }}-${{ matrix.arch }}
@@ -213,7 +213,7 @@ jobs:
       - name: Publish multi-platform tags
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
-          GHCR_IMAGE: ghcr.io/${{ github.repository }}/goreportcard
+          GHCR_IMAGE: ghcr.io/${{ github.actor }}/goreportcard
           DOCKER_IMAGE: docker.io/${{ secrets.DOCKER_USER }}/goreportcard
         shell: bash
         run: |
