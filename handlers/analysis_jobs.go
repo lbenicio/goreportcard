@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	badger "github.com/dgraph-io/badger/v2"
 	"github.com/gojp/goreportcard/download"
+	"github.com/gojp/goreportcard/storage"
 	"golang.org/x/mod/module"
 )
 
@@ -142,7 +143,7 @@ type checkJobResponse struct {
 	Report       *checksResp `json:"report,omitempty"`
 }
 
-func runRepositoryAnalysis(db *badger.DB, repo string, forceRefresh bool) (checksResp, error) {
+func runRepositoryAnalysis(db storage.Store, repo string, forceRefresh bool) (checksResp, error) {
 	client := download.NewProxyClient("https://proxy.golang.org")
 	moduleName, err := client.ModuleName(repo)
 	if err != nil {
@@ -153,21 +154,21 @@ func runRepositoryAnalysis(db *badger.DB, repo string, forceRefresh bool) (check
 	}
 
 	log.Printf("Checking repo %q...", repo)
-	resp, err := newChecksResp(db, repo, forceRefresh)
+	resp, err := newChecksResp(context.Background(), db, repo, forceRefresh)
 	if err != nil {
 		return checksResp{}, fmt.Errorf("could not analyze the repository: %w", err)
 	}
 	return resp, nil
 }
 
-func handleChecks(w http.ResponseWriter, r *http.Request, db *badger.DB, repo string) {
+func handleChecks(w http.ResponseWriter, r *http.Request, db storage.Store, repo string) {
 	analyze := func(repo string, forceRefresh bool) (checksResp, error) {
 		return runRepositoryAnalysis(db, repo, forceRefresh)
 	}
 	handleChecksWithManager(w, r, db, repo, repositoryAnalysisJobs, analyze)
 }
 
-func handleChecksWithManager(w http.ResponseWriter, r *http.Request, db *badger.DB, repo string, manager *analysisManager, analyze func(string, bool) (checksResp, error)) {
+func handleChecksWithManager(w http.ResponseWriter, r *http.Request, db storage.Store, repo string, manager *analysisManager, analyze func(string, bool) (checksResp, error)) {
 	if r.Method != http.MethodGet && r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -175,7 +176,7 @@ func handleChecksWithManager(w http.ResponseWriter, r *http.Request, db *badger.
 	forceRefresh := r.Method == http.MethodPost || r.URL.Query().Get("refresh") == "1"
 
 	if !forceRefresh {
-		if _, err := getFromCache(db, repo); err == nil {
+		if _, err := getFromCache(r.Context(), db, repo); err == nil {
 			writeCheckJobResponse(w, http.StatusOK, checkJobResponse{Redirect: "/report/" + repo})
 			return
 		} else {
@@ -237,7 +238,7 @@ func validateRepositoryPath(repo string) error {
 	return nil
 }
 
-func CheckHandler(w http.ResponseWriter, r *http.Request, db *badger.DB) {
+func CheckHandler(w http.ResponseWriter, r *http.Request, db storage.Store) {
 	repo := download.Clean(r.FormValue("repo"))
 	if err := validateRepositoryPath(repo); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)

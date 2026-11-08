@@ -1,12 +1,11 @@
 package handlers
 
 import (
-	"encoding/json"
 	"log"
 	"net/http"
 	"sync"
 
-	"github.com/dgraph-io/badger/v2"
+	"github.com/gojp/goreportcard/storage"
 )
 
 var cache struct {
@@ -16,7 +15,7 @@ var cache struct {
 }
 
 // HomeHandler handles the homepage
-func (gh *GRCHandler) HomeHandler(w http.ResponseWriter, r *http.Request, db *badger.DB) {
+func (gh *GRCHandler) HomeHandler(w http.ResponseWriter, r *http.Request, db storage.Store) {
 	if r.URL.Path[1:] == "" {
 		var recentRepos []string
 
@@ -29,35 +28,12 @@ func (gh *GRCHandler) HomeHandler(w http.ResponseWriter, r *http.Request, db *ba
 			log.Println("Fetching recent repos from cache...")
 		} else {
 			log.Println("Updating recent repos cache...")
-			recent := &[]recentItem{}
-			err := db.View(func(txn *badger.Txn) error {
-				item, err := txn.Get([]byte("recent"))
-				if err != nil && err != badger.ErrKeyNotFound {
-					return err
-				}
-
-				if item != nil {
-					err = item.Value(func(val []byte) error {
-						return json.Unmarshal(val, recent)
-					})
-
-					return err
-				}
-
-				return nil
-			})
-
+			var err error
+			recentRepos, err = db.RecentRepos(r.Context())
 			if err != nil {
 				log.Println("ERROR: ", err)
+				recentRepos = nil
 			}
-
-			recentRepos = make([]string, len(*recent))
-			var j = len(*recent) - 1
-			for _, r := range *recent {
-				recentRepos[j] = r.Repo
-				j--
-			}
-
 			cache.items = recentRepos
 			cache.count = 0
 		}

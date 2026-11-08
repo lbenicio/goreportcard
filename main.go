@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"flag"
 	"fmt"
@@ -11,8 +12,8 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/dgraph-io/badger/v2"
 	"github.com/gojp/goreportcard/handlers"
+	"github.com/gojp/goreportcard/storage"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -21,13 +22,11 @@ import (
 var (
 	addr = flag.String("http", ":8000", "HTTP listen address")
 
-	databasePath = flag.String("db", getEnv("GRC_DATABASE_PATH", "/usr/local/badger"), "path to local badger database")
-
 	//go:embed assets/*
 	embedFS embed.FS
 )
 
-func makeHandler(db *badger.DB, name string, fn func(http.ResponseWriter, *http.Request, *badger.DB, string)) http.HandlerFunc {
+func makeHandler(db storage.Store, name string, fn func(http.ResponseWriter, *http.Request, storage.Store, string)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		validPath := regexp.MustCompile(fmt.Sprintf(`^/%s/([a-zA-Z0-9\-_\/\.~]+)$`, name))
 
@@ -63,7 +62,7 @@ func makeHandler(db *badger.DB, name string, fn func(http.ResponseWriter, *http.
 	}
 }
 
-func injectBadgerHandler(db *badger.DB, fn func(http.ResponseWriter, *http.Request, *badger.DB)) http.HandlerFunc {
+func injectStoreHandler(db storage.Store, fn func(http.ResponseWriter, *http.Request, storage.Store)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		fn(w, r, db)
 	}
@@ -105,23 +104,17 @@ func (m metrics) instrument(path string, h http.HandlerFunc) (string, http.Handl
 	}
 }
 
-func getEnv(name, def string) string {
-	got := os.Getenv(name)
-	if got == "" {
-		return def
-	}
-	return got
-}
-
 func main() {
 	flag.Parse()
 	if err := os.MkdirAll("_repos/src/github.com", 0755); err != nil && !os.IsExist(err) {
 		log.Fatal("ERROR: could not create repos dir: ", err)
 	}
 
-	db, err := badger.Open(badger.DefaultOptions(*databasePath).WithTruncate(true))
+	startupCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	db, err := storage.OpenPostgres(startupCtx, os.Getenv("DATABASE_URL"))
 	if err != nil {
-		log.Fatal("ERROR: could not open badger db: ", err)
+		log.Fatal("ERROR: could not open PostgreSQL database: ", err)
 	}
 
 	assetsFS, err := fs.Sub(embedFS, "assets")
@@ -136,13 +129,13 @@ func main() {
 	m := setupMetrics()
 
 	http.HandleFunc(m.instrument("/assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(assetsFS))).ServeHTTP))
-	http.HandleFunc(m.instrument("/checks", injectBadgerHandler(db, handlers.CheckHandler)))
+	http.HandleFunc(m.instrument("/checks", injectStoreHandler(db, handlers.CheckHandler)))
 	http.HandleFunc(m.instrument("/report/", makeHandler(db, "report", gh.ReportHandler)))
 	http.HandleFunc(m.instrument("/badge/", makeHandler(db, "badge", handlers.BadgeHandler)))
-	http.HandleFunc(m.instrument("/high_scores/", injectBadgerHandler(db, gh.HighScoresHandler)))
+	http.HandleFunc(m.instrument("/high_scores/", injectStoreHandler(db, gh.HighScoresHandler)))
 	http.HandleFunc(m.instrument("/about/", gh.AboutHandler))
 	http.HandleFunc(m.instrument("/sunset/", gh.SunsetHandler))
-	http.HandleFunc(m.instrument("/", injectBadgerHandler(db, gh.HomeHandler)))
+	http.HandleFunc(m.instrument("/", injectStoreHandler(db, gh.HomeHandler)))
 
 	http.Handle("/metrics", promhttp.Handler())
 

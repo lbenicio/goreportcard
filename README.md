@@ -10,13 +10,23 @@ cd goreportcard
 make install
 ```
 
-Now run:
+The web application requires PostgreSQL 12 or later. Set `DATABASE_URL` to a PostgreSQL connection URL, then run:
 
 ```
-GRC_DATABASE_PATH=./db make start
+DATABASE_URL='postgresql://user:password@localhost:5432/goreportcard?sslmode=disable' make start
 ```
 
-and you should see
+The target database must already exist, and the application role needs permission to create and update schema objects on first startup. The application creates and updates its schema using embedded SQL migrations. Reports are stored in relational tables for repositories, report summaries, checks, file summaries, and file errors; no report payload is stored as JSON in the database.
+
+If you have an existing Badger database, stop the old application and import it before starting the PostgreSQL-backed service:
+
+```
+DATABASE_URL='postgresql://user:password@localhost:5432/goreportcard?sslmode=disable' go run ./cmd/import-badger -badger-path ./db
+```
+
+Use a new or empty PostgreSQL database for the import; matching repository paths are upserted. The importer reads Badger in read-only mode. Keep a backup of the old database until you have verified the import. The leaderboard is calculated from each repository's current report, and the repository count is maintained transactionally in PostgreSQL.
+
+Once the server starts, you should see
 
 ```
 Running on :8000...

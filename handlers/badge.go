@@ -5,13 +5,13 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/dgraph-io/badger/v2"
 	"github.com/gojp/goreportcard/check"
+	"github.com/gojp/goreportcard/storage"
 )
 
 // BadgeHandler handles fetching the badge images
-func BadgeHandler(w http.ResponseWriter, r *http.Request, db *badger.DB, repo string) {
-	resp, err := newChecksResp(db, repo, false)
+func BadgeHandler(w http.ResponseWriter, r *http.Request, db storage.Store, repo string) {
+	resp, err := newChecksResp(r.Context(), db, repo, false)
 
 	// See: http://shields.io/#styles
 	style := r.URL.Query().Get("style")

@@ -1,77 +1,37 @@
 package handlers
 
 import (
-	"container/heap"
-	"encoding/json"
 	"log"
 	"net/http"
 
-	"github.com/dgraph-io/badger/v2"
 	"github.com/dustin/go-humanize"
+	"github.com/gojp/goreportcard/storage"
 )
 
 // HighScoresHandler handles the stats page
-func (gh *GRCHandler) HighScoresHandler(w http.ResponseWriter, r *http.Request, db *badger.DB) {
-	count, scores := 0, &ScoreHeap{}
-	err := db.View(func(txn *badger.Txn) error {
-		var scoreBytes = []byte("[]")
-		item, err := txn.Get([]byte("scores"))
-		if err != nil {
-			log.Println("ERROR:", err)
-		}
-
-		if item != nil {
-			err = item.Value(func(val []byte) error {
-				scoreBytes = val
-				return nil
-			})
-
-			if err != nil {
-				log.Println("ERROR:", err)
-			}
-		}
-
-		json.Unmarshal(scoreBytes, scores)
-
-		heap.Init(scores)
-
-		item, err = txn.Get([]byte("total_repos"))
-		if err != nil && err != badger.ErrKeyNotFound {
-			return err
-		}
-		if item == nil {
-			count = 0
-			return nil
-		}
-
-		err = item.Value(func(val []byte) error {
-			return json.Unmarshal(val, &count)
-		})
-
-		return err
-	})
-
+func (gh *GRCHandler) HighScoresHandler(w http.ResponseWriter, r *http.Request, db storage.Store) {
+	count, scores, err := db.HighScores(r.Context())
 	if err != nil {
-		log.Println("ERROR: Failed to load high scores from bolt database: ", err)
-		http.Error(w, err.Error(), 500)
+		log.Println("ERROR: Failed to load high scores from PostgreSQL: ", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	t, err := gh.loadTemplate("/templates/high_scores.html")
 	if err != nil {
 		log.Println("ERROR: could not get high scores template: ", err)
-		http.Error(w, err.Error(), 500)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	sortedScores := make([]scoreItem, len(*scores))
-	for i := range sortedScores {
-		sortedScores[len(sortedScores)-i-1] = heap.Pop(scores).(scoreItem)
+	sortedScores := make([]scoreItem, len(scores))
+	for i, score := range scores {
+		sortedScores[i] = scoreItem{Repo: score.Repo, Score: score.Score, Files: score.Files}
 	}
 
 	if err := t.ExecuteTemplate(w, "base", map[string]interface{}{
 		"HighScores":           sortedScores,
-		"Count":                humanize.Comma(int64(count)),
+		"Count":                humanize.Comma(count),
 		"google_analytics_key": googleAnalyticsKey,
 	}); err != nil {
 		log.Println("ERROR:", err)

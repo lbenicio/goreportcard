@@ -7,14 +7,14 @@ import (
 
 	"flag"
 
-	"github.com/dgraph-io/badger/v2"
+	"github.com/gojp/goreportcard/storage"
 )
 
 var domain = flag.String("domain", "goreportcard.lbenicio.dev", "Domain used for your goreportcard installation")
 var googleAnalyticsKey = flag.String("google_analytics_key", "G-TFTF5Y92QD", "Google Analytics Account ID (GA4)")
 
 // ReportHandler handles the report page
-func (gh *GRCHandler) ReportHandler(w http.ResponseWriter, r *http.Request, db *badger.DB, repo string) {
+func (gh *GRCHandler) ReportHandler(w http.ResponseWriter, r *http.Request, db storage.Store, repo string) {
 	log.Printf("Displaying report: %q", repo)
 	t, err := gh.loadTemplate("/templates/report.html")
 	if err != nil {
@@ -24,7 +24,7 @@ func (gh *GRCHandler) ReportHandler(w http.ResponseWriter, r *http.Request, db *
 	}
 
 	forceRefresh := r.URL.Query().Get("wait") == "1"
-	resp, err := getFromCache(db, repo)
+	resp, err := getFromCache(r.Context(), db, repo)
 	needToLoad := forceRefresh
 	if err != nil {
 		switch err.(type) {
