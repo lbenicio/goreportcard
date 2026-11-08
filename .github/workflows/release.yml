@@ -143,7 +143,7 @@ jobs:
           ARCH: ${{ matrix.arch }}
           PLATFORM: ${{ matrix.platform }}
           VERSION: ${{ needs.prepare.outputs.version }}
-          GHCR_IMAGE: ghcr.io/${{ github.repository }}
+          GHCR_IMAGE: ghcr.io/${{ github.repository }}/goreportcard
           DOCKER_IMAGE: docker.io/${{ secrets.DOCKER_USER }}/goreportcard
           DOCKER_LABELS: ${{ steps.meta.outputs.labels }}
         shell: bash
@@ -213,7 +213,7 @@ jobs:
       - name: Publish multi-platform tags
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
-          GHCR_IMAGE: ghcr.io/${{ github.repository }}
+          GHCR_IMAGE: ghcr.io/${{ github.repository }}/goreportcard
           DOCKER_IMAGE: docker.io/${{ secrets.DOCKER_USER }}/goreportcard
         shell: bash
         run: |
