@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.1.2] - 2026-11-08
+
+### Added
+- Add a manually triggered GitHub Actions release workflow that checks for existing tags and releases, publishes container images to Docker Hub and GHCR, and creates GitHub releases from the changelog.
+- Add contributor guidelines, a code of conduct, and a security reporting policy.
+
+### Changed
+- Build amd64 and arm64 images on native runners and publish multi-platform version and `latest` tags; publish GHCR images under the repository name.
+- Update the Go module and project import paths to `github.com/lbenicio/goreportcard`.
+- Upgrade the PostgreSQL driver `pgx` to v5.9.2.
+
 ## [1.1.1] - 2026-11-08
 
 ### Added
