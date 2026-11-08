@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.1.1] - 2026-11-08
+
+### Added
+- Add optional Redis report caching through `REDIS_URL`, with a five-minute TTL, PostgreSQL as the source of truth, and PostgreSQL fallback when Redis is unavailable.
+- Upload test coverage reports to Codecov.
+
+### Changed
+- Install `staticcheck` with the development tools and rename the CodeQL workflow to `codeql.yml`.
+
 ## [1.1.0] - 2026-11-08
 
 ### Added
