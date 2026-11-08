@@ -100,7 +100,7 @@ misspell ............ 100%
 
 ### Contributing
 
-Go Report Card is an open source project run by volunteers, and contributions are welcome! Check out the [Issues](https://github.com/lbenicio/goreportcard/issues) page to see if your idea has already been mentioned. Feel free to raise an issue or submit a pull request.
+Go Report Card is an open source project run by volunteers, and contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for development and pull request guidelines, and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for community standards. For questions or feature proposals, contact the maintainer through the [contact form](https://lbenicio.dev/contact/). For security reports, see [SECURITY.md](SECURITY.md).
 
 ### Academic Citation
 
