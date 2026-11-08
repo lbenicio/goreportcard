@@ -6,22 +6,9 @@ permissions:
   contents: read
 
 jobs:
-
-  build:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v7
-    - name: Set up Go
-      uses: actions/setup-go@v7
-      with:
-        go-version: '1.27.x'
-    - name: Install
-      run: make install
-    - name: build
-      run: make build
   lint:
     runs-on: ubuntu-latest
-    needs: [build]
+
     steps:
     - uses: actions/checkout@v7
 
@@ -41,5 +28,20 @@ jobs:
       uses: actions/setup-go@v7
       with:
         go-version: '1.27.x'
+    - name: Install
+      run: make install
     - name: Test
       run: make test
+  build:
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+    - uses: actions/checkout@v7
+    - name: Set up Go
+      uses: actions/setup-go@v7
+      with:
+        go-version: '1.27.x'
+    - name: Install
+      run: make install
+    - name: build
+      run: make build
