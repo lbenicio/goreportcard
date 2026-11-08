@@ -3,7 +3,9 @@ name: Static analysis and unit testing
 on: [push, pull_request]
 
 permissions:
-  contents: read
+  contents: write
+  id-token: write
+  packages: write
 
 jobs:
   lint:
@@ -43,3 +45,64 @@ jobs:
       run: make install
     - name: build
       run: make build
+
+  summary:
+    if: always()
+    needs:
+      - lint
+      - test
+      - build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Write CI workflow summary
+        shell: bash
+        env:
+          LINT_RESULT: ${{ needs.lint.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          WORKFLOW_NAME: ${{ github.workflow }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          REPOSITORY: ${{ github.repository }}
+          SERVER_URL: ${{ github.server_url }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          COMMIT_SHA: ${{ github.sha }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+
+          status_mark() {
+            case "$1" in
+              success) printf '✅ Passed' ;;
+              failure) printf '❌ Failed' ;;
+              cancelled) printf '🛑 Cancelled' ;;
+              skipped) printf '⏭️ Skipped' ;;
+              *) printf '⚪ Not run' ;;
+            esac
+          }
+
+          if [[ "$LINT_RESULT" == "success" && "$TEST_RESULT" == "success" && "$BUILD_RESULT" == "success" ]]; then
+            title='## ✅ CI checks passed'
+          else
+            title='## ❌ CI checks did not pass'
+          fi
+
+          {
+            printf '%s\n\n' "$title"
+            printf '**Workflow:** %s  \n' "$WORKFLOW_NAME"
+            printf '**Event:** %s  \n' "$EVENT_NAME"
+            printf '**Branch/ref:** %s\n\n' "$REF_NAME"
+
+            printf '| Job | Result |\n|---|---|\n'
+            printf '| Lint | %s |\n' "$(status_mark "$LINT_RESULT")"
+            printf '| Tests | %s |\n' "$(status_mark "$TEST_RESULT")"
+            printf '| Build | %s |\n\n' "$(status_mark "$BUILD_RESULT")"
+
+            printf '### Run details\n\n'
+            printf -- '- **Commit:** %s ([view commit](%s/%s/commit/%s))\n' \
+              "${COMMIT_SHA:0:7}" "$SERVER_URL" "$REPOSITORY" "$COMMIT_SHA"
+            printf -- '- **Triggered by:** %s\n' "$ACTOR"
+            printf -- '- [View workflow run](%s)\n' "$RUN_URL"
+          } >> "$GITHUB_STEP_SUMMARY"
