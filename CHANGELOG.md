@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.1.0] - 2026-11-08
+
+### Added
+- Replace the local Badger runtime store with PostgreSQL using typed, normalized tables for reports, checks, file summaries, and errors.
+- Add versioned PostgreSQL schema migrations and a read-only Badger-to-PostgreSQL importer.
+
+### Changed
+- Configure the web app with `DATABASE_URL`; derive the leaderboard from current relational report data and maintain the repository count transactionally.
+- Update the database maintenance utility to operate on PostgreSQL.
+
 ## [1.0.7] - 2026-11-07
 
 ### Fixed
