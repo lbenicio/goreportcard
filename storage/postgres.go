@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gojp/goreportcard/check"
+	"github.com/lbenicio/goreportcard/check"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 

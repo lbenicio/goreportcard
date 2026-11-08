@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/gojp/goreportcard/storage"
+	"github.com/lbenicio/goreportcard/storage"
 )
 
 var (

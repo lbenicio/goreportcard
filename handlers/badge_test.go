@@ -3,7 +3,7 @@ package handlers
 import (
 	"testing"
 
-	"github.com/gojp/goreportcard/check"
+	"github.com/lbenicio/goreportcard/check"
 )
 
 func TestBadgeURL(t *testing.T) {

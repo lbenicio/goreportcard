@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/dgraph-io/badger/v2"
-	"github.com/gojp/goreportcard/storage"
+	"github.com/lbenicio/goreportcard/storage"
 )
 
 const legacyRepoPrefix = "repos-"

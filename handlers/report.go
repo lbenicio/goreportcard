@@ -7,7 +7,7 @@ import (
 
 	"flag"
 
-	"github.com/gojp/goreportcard/storage"
+	"github.com/lbenicio/goreportcard/storage"
 )
 
 var domain = flag.String("domain", "goreportcard.lbenicio.dev", "Domain used for your goreportcard installation")

@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gojp/goreportcard/download"
-	"github.com/gojp/goreportcard/storage"
+	"github.com/lbenicio/goreportcard/download"
+	"github.com/lbenicio/goreportcard/storage"
 	"golang.org/x/mod/module"
 )
 

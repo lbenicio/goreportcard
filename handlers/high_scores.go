@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/dustin/go-humanize"
-	"github.com/gojp/goreportcard/storage"
+	"github.com/lbenicio/goreportcard/storage"
 )
 
 // HighScoresHandler handles the stats page

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gojp/goreportcard/storage"
+	"github.com/lbenicio/goreportcard/storage"
 )
 
 type testStore struct {
@@ -68,7 +68,7 @@ func assertMaintainerUI(t *testing.T, body string) {
 			t.Errorf("page does not contain %q", want)
 		}
 	}
-	for _, removed := range []string{"Supporters", "Patreon", "Sponsored", "gojp/goreportcard", "shawnps", "ironzeb", "Production Go"} {
+	for _, removed := range []string{"Supporters", "Patreon", "Sponsored", "lbenicio/goreportcard", "shawnps", "ironzeb", "Production Go"} {
 		if strings.Contains(body, removed) {
 			t.Errorf("page still contains removed content %q", removed)
 		}

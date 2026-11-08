@@ -1,6 +1,6 @@
 # Go Report Card
 
-[![Go Report Card](https://goreportcard.lbenicio.dev/badge/github.com/gojp/goreportcard)](https://goreportcard.lbenicio.dev/report/github.com/gojp/goreportcard)
+[![Go Report Card](https://goreportcard.lbenicio.dev/badge/github.com/lbenicio/goreportcard)](https://goreportcard.lbenicio.dev/report/github.com/lbenicio/goreportcard)
 [![Coverage Status](https://codecov.io/github/lbenicio/goreportcard/coverage.svg?branch=main)](https://codecov.io/github/lbenicio/goreportcard?branch=main)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/kubernetes/dashboard/blob/master/LICENSE.txt)
 
@@ -53,7 +53,7 @@ There is also a CLI available for grading applications on your local machine.
 
 Example usage:
 ```
-git clone https://github.com/gojp/goreportcard.git
+git clone https://github.com/lbenicio/goreportcard.git
 cd goreportcard
 make install
 go install ./cmd/goreportcard-cli

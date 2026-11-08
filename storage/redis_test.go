@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gojp/goreportcard/check"
+	"github.com/lbenicio/goreportcard/check"
 )
 
 type memoryReportCache struct {

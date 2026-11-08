@@ -1,4 +1,4 @@
-module github.com/gojp/goreportcard
+module github.com/lbenicio/goreportcard
 
 go 1.27.3
 

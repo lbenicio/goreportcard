@@ -1,5 +1,5 @@
 package handlers
 
-import "github.com/gojp/goreportcard/storage"
+import "github.com/lbenicio/goreportcard/storage"
 
 type checksResp = storage.Report

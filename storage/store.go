@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/gojp/goreportcard/check"
+	"github.com/lbenicio/goreportcard/check"
 )
 
 var (

@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/dustin/go-humanize"
-	"github.com/gojp/goreportcard/check"
-	"github.com/gojp/goreportcard/download"
-	"github.com/gojp/goreportcard/storage"
+	"github.com/lbenicio/goreportcard/check"
+	"github.com/lbenicio/goreportcard/download"
+	"github.com/lbenicio/goreportcard/storage"
 )
 
 type notFoundError struct {

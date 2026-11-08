@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gojp/goreportcard/check"
+	"github.com/lbenicio/goreportcard/check"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
 )

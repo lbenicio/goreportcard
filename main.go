@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gojp/goreportcard/handlers"
-	"github.com/gojp/goreportcard/storage"
+	"github.com/lbenicio/goreportcard/handlers"
+	"github.com/lbenicio/goreportcard/storage"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"

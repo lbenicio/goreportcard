@@ -4,9 +4,9 @@ RUN apk add --update --no-cache git make
 
 RUN apk add build-base
 
-COPY . $GOPATH/src/github.com/gojp/goreportcard
+COPY . $GOPATH/src/github.com/lbenicio/goreportcard
 
-WORKDIR $GOPATH/src/github.com/gojp/goreportcard
+WORKDIR $GOPATH/src/github.com/lbenicio/goreportcard
 
 RUN ./scripts/make-install.sh
 

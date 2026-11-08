@@ -5,8 +5,8 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/gojp/goreportcard/check"
-	"github.com/gojp/goreportcard/storage"
+	"github.com/lbenicio/goreportcard/check"
+	"github.com/lbenicio/goreportcard/storage"
 )
 
 // BadgeHandler handles fetching the badge images
