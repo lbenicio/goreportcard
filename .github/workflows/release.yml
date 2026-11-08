@@ -20,14 +20,12 @@ jobs:
           echo "::error::Release workflow must be run from main."
           exit 1
 
-  release:
+  prepare:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-    permissions:
-      contents: write
-      id-token: write
-      packages: write
+    outputs:
+      version: ${{ steps.release_info.outputs.version }}
+      release_notes_b64: ${{ steps.release_info.outputs.release_notes_b64 }}
     steps:
       - name: Check out source
         uses: actions/checkout@v7.0.1
@@ -39,6 +37,7 @@ jobs:
         shell: bash
         run: |
           python3 - <<'PY'
+          import base64
           import os
           import re
           from pathlib import Path
@@ -54,11 +53,10 @@ jobs:
           if not notes:
               raise SystemExit(f"CHANGELOG.md release {heading.group(1)} has no release notes")
 
-          notes_path = Path(os.environ["RUNNER_TEMP"]) / "release-notes.md"
-          notes_path.write_text(notes + "\n")
+          notes_b64 = base64.b64encode(notes.encode()).decode()
           with open(os.environ["GITHUB_OUTPUT"], "a") as output:
               output.write(f"version={heading.group(1)}\n")
-              output.write(f"notes_path={notes_path}\n")
+              output.write(f"release_notes_b64={notes_b64}\n")
           PY
 
       - name: Fail if the version is already released
@@ -95,6 +93,28 @@ jobs:
             exit 1
           fi
 
+  build:
+    needs: prepare
+    if: github.ref == 'refs/heads/main'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7.0.1
+
       - name: Docker image metadata
         id: meta
         uses: docker/metadata-action@v6
@@ -103,13 +123,78 @@ jobs:
             ghcr.io/${{ github.repository }}
             docker.io/${{ secrets.DOCKER_USER }}/goreportcard
           tags: |
-            type=raw,value=${{ steps.release_info.outputs.version }}
-            type=raw,value=latest
+            type=raw,value=${{ needs.prepare.outputs.version }}-${{ matrix.arch }}
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4.4.0
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v4.7.0
+        with:
+          username: ${{ secrets.DOCKER_USER }}
+          password: ${{ secrets.DOCKER_PAT }}
 
-      - name: Set up Docker Buildx
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push native architecture image
+        env:
+          ARCH: ${{ matrix.arch }}
+          PLATFORM: ${{ matrix.platform }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          GHCR_IMAGE: ghcr.io/${{ github.repository }}
+          DOCKER_IMAGE: docker.io/${{ secrets.DOCKER_USER }}/goreportcard
+          DOCKER_LABELS: ${{ steps.meta.outputs.labels }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          host_arch="$(uname -m)"
+          case "${ARCH}:${host_arch}" in
+            amd64:x86_64|arm64:aarch64) ;;
+            *)
+              echo "::error::Expected ${ARCH} runner, got host architecture ${host_arch}."
+              exit 1
+              ;;
+          esac
+
+          build_args=()
+          while IFS= read -r label; do
+            if [[ -n "$label" ]]; then
+              build_args+=(--label "$label")
+            fi
+          done <<< "$DOCKER_LABELS"
+
+          ghcr_tag="${GHCR_IMAGE}:${VERSION}-${ARCH}"
+          docker_tag="${DOCKER_IMAGE}:${VERSION}-${ARCH}"
+          docker build --pull --platform "$PLATFORM" \
+            --tag "$ghcr_tag" \
+            --tag "$docker_tag" \
+            "${build_args[@]}" \
+            .
+
+          built_platform="$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$ghcr_tag")"
+          if [[ "$built_platform" != "$PLATFORM" ]]; then
+            echo "::error::Expected ${PLATFORM} image, built ${built_platform}."
+            exit 1
+          fi
+
+          docker push "$ghcr_tag"
+          docker push "$docker_tag"
+
+  publish:
+    needs:
+      - prepare
+      - build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - name: Set up Buildx for manifest assembly
         uses: docker/setup-buildx-action@v4.4.1
 
       - name: Log in to Docker Hub
@@ -125,22 +210,45 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push multi-platform images
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Publish multi-platform tags
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          GHCR_IMAGE: ghcr.io/${{ github.repository }}
+          DOCKER_IMAGE: docker.io/${{ secrets.DOCKER_USER }}/goreportcard
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for image in "$GHCR_IMAGE" "$DOCKER_IMAGE"; do
+            docker buildx imagetools create \
+              --tag "${image}:${VERSION}" \
+              "${image}:${VERSION}-amd64" \
+              "${image}:${VERSION}-arm64"
+            docker buildx imagetools create \
+              --tag "${image}:latest" \
+              "${image}:${VERSION}-amd64" \
+              "${image}:${VERSION}-arm64"
+          done
 
       - name: Create GitHub release from changelog
         env:
+          GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
+          RELEASE_NOTES_B64: ${{ needs.prepare.outputs.release_notes_b64 }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        shell: bash
         run: |
-          gh release create "${{ steps.release_info.outputs.version }}" \
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+
+          notes = base64.b64decode(os.environ["RELEASE_NOTES_B64"], validate=True)
+          Path(os.environ["RUNNER_TEMP"], "release-notes.md").write_bytes(notes)
+          PY
+
+          gh release create "$VERSION" \
             --target "$GITHUB_SHA" \
-            --title "v${{ steps.release_info.outputs.version }}" \
-            --notes-file "${{ steps.release_info.outputs.notes_path }}"
+            --title "v${VERSION}" \
+            --notes-file "$RUNNER_TEMP/release-notes.md"
