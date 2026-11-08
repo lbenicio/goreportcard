@@ -6,3 +6,4 @@ go install ./vendor/github.com/fzipp/gocyclo/cmd/gocyclo
 go install ./vendor/github.com/gordonklaus/ineffassign
 go install ./vendor/github.com/kisielk/errcheck
 go install ./vendor/github.com/client9/misspell/cmd/misspell
+go install ./vendor/honnef.co/go/tools/cmd/staticcheck
