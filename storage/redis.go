@@ -76,7 +76,7 @@ func OpenRedisCache(ctx context.Context, store Store, redisURL string) (*RedisSt
 	client := redis.NewClient(options)
 	cached := &RedisStore{Store: store, cache: &redisReportCache{client: client}}
 	if err := client.Ping(ctx).Err(); err != nil {
-		log.Printf("WARNING: Redis is unavailable at startup; report reads will fall back to PostgreSQL: %v", err)
+		log.Printf("WARNING: Redis is unavailable at startup; report reads will fall back to the relational database: %v", err)
 	}
 	return cached, nil
 }
@@ -89,9 +89,9 @@ func (s *RedisStore) GetReport(ctx context.Context, repo string) (Report, error)
 		if json.Unmarshal([]byte(value), &report) == nil && report.Repo == repo {
 			return report, nil
 		}
-		log.Printf("WARNING: invalid Redis report cache entry; loading report from PostgreSQL")
+		log.Printf("WARNING: invalid Redis report cache entry; loading report from the relational database")
 	} else if !errors.Is(err, errReportCacheMiss) {
-		log.Printf("WARNING: Redis report cache read failed; loading report from PostgreSQL: %v", err)
+		log.Printf("WARNING: Redis report cache read failed; loading report from the relational database: %v", err)
 	}
 
 	report, err := s.Store.GetReport(ctx, repo)

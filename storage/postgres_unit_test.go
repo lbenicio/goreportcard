@@ -18,15 +18,16 @@ import (
 )
 
 type sqlTestStep struct {
-	op          string
-	contains    string
-	columns     []string
-	values      [][]driver.Value
-	err         error
-	rowsErr     error
-	closeErr    error
-	affected    int64
-	affectedErr error
+	op           string
+	contains     string
+	columns      []string
+	values       [][]driver.Value
+	err          error
+	rowsErr      error
+	closeErr     error
+	affected     int64
+	affectedErr  error
+	lastInsertID int64
 }
 
 type sqlTestScript struct {
@@ -100,7 +101,7 @@ func (c *sqlTestConn) ExecContext(_ context.Context, query string, _ []driver.Na
 	if step.err != nil {
 		return nil, step.err
 	}
-	return sqlTestResult{affected: step.affected, affectedErr: step.affectedErr}, nil
+	return sqlTestResult{affected: step.affected, affectedErr: step.affectedErr, lastInsertID: step.lastInsertID}, nil
 }
 
 func (c *sqlTestConn) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
@@ -120,12 +121,13 @@ func (tx *sqlTestTx) Commit() error   { return tx.script.commitErr }
 func (tx *sqlTestTx) Rollback() error { return tx.script.rollbackErr }
 
 type sqlTestResult struct {
-	affected    int64
-	affectedErr error
+	affected     int64
+	affectedErr  error
+	lastInsertID int64
 }
 
 func (r sqlTestResult) LastInsertId() (int64, error) {
-	return 0, errors.New("LastInsertId is not supported")
+	return r.lastInsertID, nil
 }
 func (r sqlTestResult) RowsAffected() (int64, error) { return r.affected, r.affectedErr }
 

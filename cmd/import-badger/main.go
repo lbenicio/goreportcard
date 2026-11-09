@@ -31,8 +31,8 @@ type legacyRecentGetter interface {
 }
 
 var (
-	openPostgresStore = func(ctx context.Context, databaseURL string) (importerStore, error) {
-		return storage.OpenPostgres(ctx, databaseURL)
+	openDatabaseStore = func(ctx context.Context, databaseURL string) (importerStore, error) {
+		return storage.OpenDatabase(ctx, databaseURL)
 	}
 	openLegacyBadger = func(path string) (*badger.DB, error) {
 		return badger.Open(badger.DefaultOptions(path).WithReadOnly(true).WithLogger(nil))
@@ -60,11 +60,11 @@ func run() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 
-	postgres, err := openPostgresStore(ctx, databaseURL)
+	database, err := openDatabaseStore(ctx, databaseURL)
 	if err != nil {
 		return err
 	}
-	defer postgres.Close()
+	defer database.Close()
 
 	legacy, err := openLegacyBadger(*badgerPath)
 	if err != nil {
@@ -72,7 +72,7 @@ func run() error {
 	}
 	defer legacy.Close()
 
-	imported, err := importReports(ctx, legacy, postgres)
+	imported, err := importReports(ctx, legacy, database)
 	if err != nil {
 		return err
 	}
@@ -83,7 +83,7 @@ func run() error {
 	}
 	recentImported := 0
 	for _, item := range recent {
-		if err := postgres.AddRecent(ctx, item.Repo); err != nil {
+		if err := database.AddRecent(ctx, item.Repo); err != nil {
 			if errors.Is(err, storage.ErrRepositoryNotFound) {
 				log.Printf("Skipping recent repository %q because it has no imported report", item.Repo)
 				continue
@@ -97,7 +97,7 @@ func run() error {
 	return nil
 }
 
-func importReports(ctx context.Context, legacy *badger.DB, postgres storage.Store) (int, error) {
+func importReports(ctx context.Context, legacy *badger.DB, database storage.Store) (int, error) {
 	txn := legacy.NewTransaction(false)
 	defer txn.Discard()
 
@@ -122,7 +122,7 @@ func importReports(ctx context.Context, legacy *badger.DB, postgres storage.Stor
 			return count, fmt.Errorf("decode Badger report %q: %w", repo, err)
 		}
 		report.Repo = repo
-		if err := postgres.SaveReport(ctx, report); err != nil {
+		if err := database.SaveReport(ctx, report); err != nil {
 			return count, fmt.Errorf("import report %q: %w", repo, err)
 		}
 		count++

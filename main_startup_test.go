@@ -42,14 +42,14 @@ func configureApplicationTest(t *testing.T) *startupTestStore {
 	t.Setenv("REDIS_URL", "")
 
 	oldParseFlags, oldFatal := parseFlags, fatal
-	oldOpenPostgres, oldOpenRedis := openPostgresStore, openRedisStore
+	oldOpenDatabase, oldOpenRedis := openDatabaseStore, openRedisStore
 	oldLoadAssets, oldListenAndServe := loadAssets, listenAndServe
 	oldAddr := *addr
 
 	store := &startupTestStore{}
 	parseFlags = func() {}
 	fatal = func(...any) {}
-	openPostgresStore = func(context.Context, string) (closeableStore, error) {
+	openDatabaseStore = func(context.Context, string) (closeableStore, error) {
 		return store, nil
 	}
 	openRedisStore = func(context.Context, storage.Store, string) (closeableStore, error) {
@@ -60,7 +60,7 @@ func configureApplicationTest(t *testing.T) *startupTestStore {
 
 	t.Cleanup(func() {
 		parseFlags, fatal = oldParseFlags, oldFatal
-		openPostgresStore, openRedisStore = oldOpenPostgres, oldOpenRedis
+		openDatabaseStore, openRedisStore = oldOpenDatabase, oldOpenRedis
 		loadAssets, listenAndServe = oldLoadAssets, oldListenAndServe
 		*addr = oldAddr
 	})
@@ -105,7 +105,7 @@ func TestMainStartsAppAndRegistersHandlers(t *testing.T) {
 		t.Fatal("main did not pass a handler to the HTTP server")
 	}
 	if !store.closed {
-		t.Fatal("main did not close the PostgreSQL store after the server returned")
+		t.Fatal("main did not close the database store after the server returned")
 	}
 
 	aboutResponse := httptest.NewRecorder()
@@ -128,18 +128,18 @@ func TestMainStartsAppAndRegistersHandlers(t *testing.T) {
 }
 
 func TestRunReturnsStartupAndServerErrorsAndClosesStore(t *testing.T) {
-	t.Run("PostgreSQL open error", func(t *testing.T) {
+	t.Run("database open error", func(t *testing.T) {
 		configureApplicationTest(t)
 		wantErr := errors.New("database unavailable")
-		openPostgresStore = func(context.Context, string) (closeableStore, error) {
+		openDatabaseStore = func(context.Context, string) (closeableStore, error) {
 			return nil, wantErr
 		}
-		if err := run(); !errors.Is(err, wantErr) || !strings.Contains(err.Error(), "could not open PostgreSQL database") {
-			t.Fatalf("run error = %v, want wrapped PostgreSQL error", err)
+		if err := run(); !errors.Is(err, wantErr) || !strings.Contains(err.Error(), "could not open database") {
+			t.Fatalf("run error = %v, want wrapped database error", err)
 		}
 	})
 
-	t.Run("Redis open error closes PostgreSQL", func(t *testing.T) {
+	t.Run("Redis open error closes database", func(t *testing.T) {
 		store := configureApplicationTest(t)
 		t.Setenv("REDIS_URL", "redis://unit-test")
 		wantErr := errors.New("redis unavailable")
@@ -150,11 +150,11 @@ func TestRunReturnsStartupAndServerErrorsAndClosesStore(t *testing.T) {
 			t.Fatalf("run error = %v, want wrapped Redis error", err)
 		}
 		if !store.closed {
-			t.Fatal("PostgreSQL store was not closed after Redis setup failed")
+			t.Fatal("database store was not closed after Redis setup failed")
 		}
 	})
 
-	t.Run("asset loading error closes PostgreSQL", func(t *testing.T) {
+	t.Run("asset loading error closes database", func(t *testing.T) {
 		store := configureApplicationTest(t)
 		wantErr := errors.New("assets unavailable")
 		loadAssets = func() (fs.FS, error) { return nil, wantErr }
@@ -162,11 +162,11 @@ func TestRunReturnsStartupAndServerErrorsAndClosesStore(t *testing.T) {
 			t.Fatalf("run error = %v, want asset loading error", err)
 		}
 		if !store.closed {
-			t.Fatal("PostgreSQL store was not closed after asset loading failed")
+			t.Fatal("database store was not closed after asset loading failed")
 		}
 	})
 
-	t.Run("HTTP server error closes PostgreSQL", func(t *testing.T) {
+	t.Run("HTTP server error closes database", func(t *testing.T) {
 		store := configureApplicationTest(t)
 		wantErr := errors.New("listen failed")
 		listenAndServe = func(string, http.Handler) error { return wantErr }
@@ -174,7 +174,7 @@ func TestRunReturnsStartupAndServerErrorsAndClosesStore(t *testing.T) {
 			t.Fatalf("run error = %v, want HTTP server error", err)
 		}
 		if !store.closed {
-			t.Fatal("PostgreSQL store was not closed after the server returned an error")
+			t.Fatal("database store was not closed after the server returned an error")
 		}
 	})
 }
@@ -182,7 +182,7 @@ func TestRunReturnsStartupAndServerErrorsAndClosesStore(t *testing.T) {
 func TestMainReportsStartupError(t *testing.T) {
 	configureApplicationTest(t)
 	wantErr := errors.New("database unavailable")
-	openPostgresStore = func(context.Context, string) (closeableStore, error) {
+	openDatabaseStore = func(context.Context, string) (closeableStore, error) {
 		return nil, wantErr
 	}
 	var fatalArgs []any
@@ -190,8 +190,8 @@ func TestMainReportsStartupError(t *testing.T) {
 
 	main()
 
-	if len(fatalArgs) != 1 || !strings.Contains(fatalArgs[0].(error).Error(), "could not open PostgreSQL database") {
-		t.Fatalf("fatal arguments = %#v, want the PostgreSQL startup error", fatalArgs)
+	if len(fatalArgs) != 1 || !strings.Contains(fatalArgs[0].(error).Error(), "could not open database") {
+		t.Fatalf("fatal arguments = %#v, want the database startup error", fatalArgs)
 	}
 }
 
@@ -229,8 +229,8 @@ func TestRunHandlesRepositoryDirectoryAndRedisCloseErrors(t *testing.T) {
 }
 
 func TestDefaultStoreAdaptersRejectInvalidConfiguration(t *testing.T) {
-	if _, err := openPostgresStore(context.Background(), ""); err == nil || !strings.Contains(err.Error(), "DATABASE_URL is required") {
-		t.Fatalf("default PostgreSQL opener error = %v, want missing DATABASE_URL error", err)
+	if _, err := openDatabaseStore(context.Background(), ""); err == nil || !strings.Contains(err.Error(), "DATABASE_URL is required") {
+		t.Fatalf("default database opener error = %v, want missing DATABASE_URL error", err)
 	}
 	if _, err := openRedisStore(context.Background(), nil, "not-a-redis-url"); err == nil || !strings.Contains(err.Error(), "parse REDIS_URL") {
 		t.Fatalf("default Redis opener error = %v, want malformed REDIS_URL error", err)
@@ -241,8 +241,8 @@ func TestDefaultStorageOpenersRejectInvalidConfigurationWithoutConnecting(t *tes
 	t.Run("missing database URL", func(t *testing.T) {
 		configureApplicationTest(t)
 		t.Setenv("DATABASE_URL", "")
-		openPostgresStore = func(ctx context.Context, dsn string) (closeableStore, error) {
-			return storage.OpenPostgres(ctx, dsn)
+		openDatabaseStore = func(ctx context.Context, dsn string) (closeableStore, error) {
+			return storage.OpenDatabase(ctx, dsn)
 		}
 		if err := run(); err == nil || !strings.Contains(err.Error(), "DATABASE_URL is required") {
 			t.Fatalf("run error = %v, want missing DATABASE_URL error", err)

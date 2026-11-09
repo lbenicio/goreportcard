@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- Support MySQL and MariaDB alongside PostgreSQL, selected through the `DATABASE_URL` scheme.
+
 ## [1.1.2] - 2026-11-08
 
 ### Added

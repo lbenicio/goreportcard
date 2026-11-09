@@ -86,6 +86,28 @@ func TestRunRequiresDatabaseURLBeforeOpeningStore(t *testing.T) {
 	}
 }
 
+func TestRunPassesMariaDBURLToStoreOpener(t *testing.T) {
+	preserveDBToolState(t)
+	const databaseURL = "mariadb://user:pass@localhost/goreportcard"
+	t.Setenv("DATABASE_URL", databaseURL)
+	store := &repositoryAdminStoreStub{}
+	var gotDatabaseURL string
+	openRepositoryStore = func(_ context.Context, got string) (repositoryAdminStore, error) {
+		gotDatabaseURL = got
+		return store, nil
+	}
+
+	if err := run(); err != nil {
+		t.Fatalf("run with MariaDB URL: %v", err)
+	}
+	if gotDatabaseURL != databaseURL {
+		t.Fatalf("store opener URL = %q, want %q", gotDatabaseURL, databaseURL)
+	}
+	if store.closeCalls != 1 {
+		t.Fatalf("store close calls = %d, want 1", store.closeCalls)
+	}
+}
+
 func TestRunRejectsWhitespaceDatabaseURLBeforeConnecting(t *testing.T) {
 	preserveDBToolState(t)
 	t.Setenv("DATABASE_URL", "  \t")

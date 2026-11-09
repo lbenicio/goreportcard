@@ -12,7 +12,7 @@ import (
 func (gh *GRCHandler) HighScoresHandler(w http.ResponseWriter, r *http.Request, db storage.Store) {
 	count, scores, err := db.HighScores(r.Context())
 	if err != nil {
-		log.Println("ERROR: Failed to load high scores from PostgreSQL: ", err)
+		log.Println("ERROR: Failed to load high scores from database: ", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

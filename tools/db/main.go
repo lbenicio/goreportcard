@@ -12,11 +12,11 @@ import (
 )
 
 var (
-	deleteRepoName       = flag.String("deleterepo", "", "repository path to delete from PostgreSQL")
+	deleteRepoName       = flag.String("deleterepo", "", "repository path to delete from the database")
 	removeDuplicatesFlag = flag.Bool("removeduplicates", false, "remove non-lowercase duplicates when lowercase paths exist")
 	dryRun               = flag.Bool("dryrun", false, "dry run mode")
 	openRepositoryStore  = func(ctx context.Context, databaseURL string) (repositoryAdminStore, error) {
-		return storage.OpenPostgres(ctx, databaseURL)
+		return storage.OpenDatabase(ctx, databaseURL)
 	}
 	fatalLog = log.Fatal
 )

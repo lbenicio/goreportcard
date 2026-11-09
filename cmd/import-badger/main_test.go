@@ -240,7 +240,7 @@ func TestRunImportsReportsAndRecentRepositoriesThroughInjectedStore(t *testing.T
 		"recent":                            recentJSON,
 	})
 	store := &importTestStore{addRecentErrs: map[string]error{"missing-report": storage.ErrRepositoryNotFound}}
-	openPostgresStore = func(_ context.Context, databaseURL string) (importerStore, error) {
+	openDatabaseStore = func(_ context.Context, databaseURL string) (importerStore, error) {
 		if databaseURL != "postgres://test" {
 			t.Errorf("database URL = %q, want postgres://test", databaseURL)
 		}
@@ -269,22 +269,22 @@ func TestRunImportsReportsAndRecentRepositoriesThroughInjectedStore(t *testing.T
 	}
 }
 
-func TestRunPropagatesPostgresAndBadgerOpenErrors(t *testing.T) {
+func TestRunPropagatesDatabaseAndBadgerOpenErrors(t *testing.T) {
 	for _, tc := range []struct {
-		name      string
-		pgErr     error
-		badgerErr error
-		want      string
+		name        string
+		databaseErr error
+		badgerErr   error
+		want        string
 	}{
-		{name: "PostgreSQL open", pgErr: errors.New("postgres unavailable"), want: "postgres unavailable"},
+		{name: "database open", databaseErr: errors.New("database unavailable"), want: "database unavailable"},
 		{name: "Badger open", badgerErr: errors.New("Badger unavailable"), want: "open legacy Badger database: Badger unavailable"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			preserveImporterState(t)
 			store := &importTestStore{}
-			openPostgresStore = func(context.Context, string) (importerStore, error) {
-				if tc.pgErr != nil {
-					return nil, tc.pgErr
+			openDatabaseStore = func(context.Context, string) (importerStore, error) {
+				if tc.databaseErr != nil {
+					return nil, tc.databaseErr
 				}
 				return store, nil
 			}
@@ -298,7 +298,7 @@ func TestRunPropagatesPostgresAndBadgerOpenErrors(t *testing.T) {
 			if err == nil || err.Error() != tc.want {
 				t.Fatalf("run error = %v, want %q", err, tc.want)
 			}
-			if tc.pgErr == nil && store.closeCalls != 1 {
+			if tc.databaseErr == nil && store.closeCalls != 1 {
 				t.Fatalf("store close calls = %d, want 1", store.closeCalls)
 			}
 		})
@@ -340,7 +340,7 @@ func TestRunPropagatesReportRecentReadAndAddErrors(t *testing.T) {
 			preserveImporterState(t)
 			path := createRunBadger(t, tc.values)
 			store := &importTestStore{addRecentErrs: tc.addErrs}
-			openPostgresStore = func(context.Context, string) (importerStore, error) { return store, nil }
+			openDatabaseStore = func(context.Context, string) (importerStore, error) { return store, nil }
 			t.Setenv("DATABASE_URL", "postgres://test")
 			configureImportRun(t, "-badger-path="+path)
 
@@ -357,8 +357,8 @@ func TestRunPropagatesReportRecentReadAndAddErrors(t *testing.T) {
 
 func TestMainLogsFatalRunError(t *testing.T) {
 	preserveImporterState(t)
-	openErr := errors.New("postgres unavailable")
-	openPostgresStore = func(context.Context, string) (importerStore, error) { return nil, openErr }
+	openErr := errors.New("database unavailable")
+	openDatabaseStore = func(context.Context, string) (importerStore, error) { return nil, openErr }
 	t.Setenv("DATABASE_URL", "postgres://test")
 	configureImportRun(t, "-badger-path=unused")
 	var fatalMessage string
@@ -372,9 +372,9 @@ func TestMainLogsFatalRunError(t *testing.T) {
 
 func preserveImporterState(t *testing.T) {
 	t.Helper()
-	oldPostgresOpener, oldBadgerOpener, oldFatalLog := openPostgresStore, openLegacyBadger, fatalLog
+	oldDatabaseOpener, oldBadgerOpener, oldFatalLog := openDatabaseStore, openLegacyBadger, fatalLog
 	t.Cleanup(func() {
-		openPostgresStore, openLegacyBadger, fatalLog = oldPostgresOpener, oldBadgerOpener, oldFatalLog
+		openDatabaseStore, openLegacyBadger, fatalLog = oldDatabaseOpener, oldBadgerOpener, oldFatalLog
 	})
 }
 

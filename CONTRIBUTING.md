@@ -31,8 +31,8 @@ make build
 
 `make lint` includes formatting (`gofmt -s`), `go vet`, `staticcheck`, and `misspell`. You can run the formatting check alone with `make fmt`.
 
-PostgreSQL integration tests use `TEST_DATABASE_URL`. Set it only to a disposable test database: the tests create and drop a temporary schema and require permission to do so. Tests that need this URL are skipped when it is unset.
+PostgreSQL integration tests use `TEST_DATABASE_URL`. Set it only to a disposable test database: the tests create and drop a temporary schema and require permission to do so. MySQL/MariaDB integration tests use `TEST_MYSQL_DATABASE_URL`; they create and drop a temporary database and require permission to do so. Tests that need either URL are skipped when it is unset.
 
-## PostgreSQL changes
+## Database changes
 
-For schema changes, include a new SQL migration and tests that cover the change. Keep PostgreSQL as the source of truth; Redis is an optional report cache.
+The relational store supports PostgreSQL, MySQL, and MariaDB. Add schema migrations and tests for each supported dialect when changing the schema: PostgreSQL migrations belong in `storage/migrations/`, and MySQL/MariaDB migrations belong in `storage/migrations/mysql/`. Redis is an optional report cache; the selected relational database remains the source of truth.

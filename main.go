@@ -36,8 +36,8 @@ var (
 	parseFlags = flag.Parse
 	fatal      = log.Fatal
 
-	openPostgresStore = func(ctx context.Context, dsn string) (closeableStore, error) {
-		return storage.OpenPostgres(ctx, dsn)
+	openDatabaseStore = func(ctx context.Context, dsn string) (closeableStore, error) {
+		return storage.OpenDatabase(ctx, dsn)
 	}
 	openRedisStore = func(ctx context.Context, store storage.Store, redisURL string) (closeableStore, error) {
 		return storage.OpenRedisCache(ctx, store, redisURL)
@@ -144,9 +144,9 @@ func run() error {
 
 	startupCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	db, err := openPostgresStore(startupCtx, os.Getenv("DATABASE_URL"))
+	db, err := openDatabaseStore(startupCtx, os.Getenv("DATABASE_URL"))
 	if err != nil {
-		return fmt.Errorf("ERROR: could not open PostgreSQL database: %w", err)
+		return fmt.Errorf("ERROR: could not open database: %w", err)
 	}
 	defer db.Close()
 

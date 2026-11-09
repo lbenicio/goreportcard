@@ -28,7 +28,7 @@ func (notFoundError) Unwrap() error {
 func getFromCache(ctx context.Context, db storage.Store, repo string) (checksResp, error) {
 	resp, err := db.GetReport(ctx, repo)
 	if errors.Is(err, storage.ErrReportNotFound) {
-		log.Printf("Repo %q not found in PostgreSQL cache", repo)
+		log.Printf("Repo %q not found in database cache", repo)
 		return checksResp{}, notFoundError{repo: repo}
 	}
 	if err != nil {

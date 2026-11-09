@@ -97,6 +97,9 @@ func TestPostgresMigrateFailurePaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, file := range files {
+		if file.IsDir() {
+			continue
+		}
 		data, err := migrationFiles.ReadFile("migrations/" + file.Name())
 		if err != nil {
 			t.Fatal(err)
