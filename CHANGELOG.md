@@ -2,8 +2,19 @@
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-09
+
 ### Added
-- Support MySQL and MariaDB alongside PostgreSQL, selected through the `DATABASE_URL` scheme.
+- Support MySQL and MariaDB alongside PostgreSQL, selected through the `DATABASE_URL` scheme, with migrations and importer/maintenance-tool support.
+- Add extensive edge-case test coverage across analysis, downloads, handlers, database storage, and maintenance tools.
+- Add CI and release workflow summaries with check results, image publication status, and release details.
+
+### Changed
+- Restrict CI token permissions to read-only and scope release workflow permissions to publishing needs.
+- Improve error handling and cleanup across application startup, repository downloads, Badger imports, and maintenance tools.
+
+### Fixed
+- Correct Go source-file detection in license analysis.
 
 ## [1.1.2] - 2026-11-08
 
