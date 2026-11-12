@@ -1,0 +1,3 @@
+# Request review from the repository owner for Dependabot Go module updates.
+/go.mod @lbenicio
+/go.sum @lbenicio
