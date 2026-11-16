@@ -166,7 +166,7 @@ func TestOpenRedisCacheAndRedisReportCacheOperations(t *testing.T) {
 	cache := store.cache.(*redisReportCache)
 	ctx := context.Background()
 
-	if _, err := cache.Get(ctx, "report"); !errors.Is(err, errReportCacheMiss) {
+	if _, err := cache.Get(ctx, "report"); !errors.Is(err, errCacheMiss) {
 		t.Fatalf("Get(missing key) error = %v, want cache miss", err)
 	}
 	if err := cache.Set(ctx, "report", "encoded report", time.Minute); err != nil {
@@ -179,7 +179,7 @@ func TestOpenRedisCacheAndRedisReportCacheOperations(t *testing.T) {
 	if err := cache.Delete(ctx, "report"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := cache.Get(ctx, "report"); !errors.Is(err, errReportCacheMiss) {
+	if _, err := cache.Get(ctx, "report"); !errors.Is(err, errCacheMiss) {
 		t.Fatalf("Get(deleted key) error = %v, want cache miss", err)
 	}
 	if err := store.Close(); err != nil {

@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-11-16
+
+### Added
+- Cache recent repositories in Redis and invalidate the cache when a repository is added to the recent list.
+
+### Fixed
+- Keep homepage responses fast by refreshing recent repositories in the background and retaining the last cached list when storage reads fail.
+
 ## [1.2.0] - 2026-11-09
 
 ### Added

@@ -29,7 +29,7 @@ func (c *memoryReportCache) Get(_ context.Context, key string) (string, error) {
 	}
 	value, ok := c.values[key]
 	if !ok {
-		return "", errReportCacheMiss
+		return "", errCacheMiss
 	}
 	return value, nil
 }

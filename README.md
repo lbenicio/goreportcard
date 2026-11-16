@@ -29,14 +29,14 @@ DATABASE_URL='mariadb://user:password@localhost:3306/goreportcard?charset=utf8mb
 
 The target database must already exist, and the application role needs permission to create and update schema objects on first startup. The application creates and updates its schema using embedded, database-specific SQL migrations. MySQL and MariaDB URLs use standard URL encoding for special characters in usernames or passwords; `tls=true` can be added for TLS connections. Reports are stored in relational tables for repositories, report summaries, checks, file summaries, and file errors; no report payload is stored as JSON.
 
-Redis is optional. Set `REDIS_URL` to a `redis://` or `rediss://` connection URL to enable a five-minute cache for report reads:
+Redis is optional. Set `REDIS_URL` to a `redis://` or `rediss://` connection URL to enable five-minute caches for report reads and the shared recent-repositories list:
 
 ```
 DATABASE_URL='postgresql://user:password@localhost:5432/goreportcard?sslmode=disable' \
 REDIS_URL='redis://localhost:6379/0' make start
 ```
 
-The selected relational database remains the source of truth; Redis stores serialized report cache entries only, and successful report writes invalidate the corresponding entry. If Redis is unavailable, the application logs a warning and reads reports from the relational database instead.
+The selected relational database remains the source of truth. Successful report writes and recent-repository updates invalidate their Redis entries. The homepage also keeps a short-lived in-process snapshot and refreshes it in the background, so slow database or Redis reads do not delay the page. If Redis is unavailable, the application logs a warning and reads from the relational database instead.
 
 If you have an existing Badger database, stop the old application and import it before starting the service:
 

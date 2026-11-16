@@ -15,9 +15,11 @@ import (
 const (
 	reportCacheKeyPrefix = "goreportcard:report:v1:"
 	reportCacheTTL       = 5 * time.Minute
+	recentReposCacheKey  = "goreportcard:recent-repos:v1"
+	recentReposCacheTTL  = 5 * time.Minute
 )
 
-var errReportCacheMiss = errors.New("report cache miss")
+var errCacheMiss = errors.New("cache miss")
 
 type reportCache interface {
 	Get(context.Context, string) (string, error)
@@ -33,7 +35,7 @@ type redisReportCache struct {
 func (c *redisReportCache) Get(ctx context.Context, key string) (string, error) {
 	value, err := c.client.Get(ctx, key).Result()
 	if errors.Is(err, redis.Nil) {
-		return "", errReportCacheMiss
+		return "", errCacheMiss
 	}
 	return value, err
 }
@@ -50,7 +52,7 @@ func (c *redisReportCache) Close() error {
 	return c.client.Close()
 }
 
-// RedisStore adds a best-effort Redis cache for reports while keeping Store as the source of truth.
+// RedisStore adds best-effort Redis caches while keeping Store as the source of truth.
 type RedisStore struct {
 	Store
 	cache reportCache
@@ -76,7 +78,7 @@ func OpenRedisCache(ctx context.Context, store Store, redisURL string) (*RedisSt
 	client := redis.NewClient(options)
 	cached := &RedisStore{Store: store, cache: &redisReportCache{client: client}}
 	if err := client.Ping(ctx).Err(); err != nil {
-		log.Printf("WARNING: Redis is unavailable at startup; report reads will fall back to the relational database: %v", err)
+		log.Printf("WARNING: Redis is unavailable at startup; cached reads will fall back to the relational database: %v", err)
 	}
 	return cached, nil
 }
@@ -90,7 +92,7 @@ func (s *RedisStore) GetReport(ctx context.Context, repo string) (Report, error)
 			return report, nil
 		}
 		log.Printf("WARNING: invalid Redis report cache entry; loading report from the relational database")
-	} else if !errors.Is(err, errReportCacheMiss) {
+	} else if !errors.Is(err, errCacheMiss) {
 		log.Printf("WARNING: Redis report cache read failed; loading report from the relational database: %v", err)
 	}
 
@@ -108,6 +110,44 @@ func (s *RedisStore) GetReport(ctx context.Context, repo string) (Report, error)
 		log.Printf("WARNING: could not write report to Redis cache: %v", err)
 	}
 	return report, nil
+}
+
+func (s *RedisStore) RecentRepos(ctx context.Context) ([]string, error) {
+	value, err := s.cache.Get(ctx, recentReposCacheKey)
+	if err == nil {
+		var repos []string
+		if json.Unmarshal([]byte(value), &repos) == nil {
+			return repos, nil
+		}
+		log.Printf("WARNING: invalid Redis recent repositories cache entry; loading from the relational database")
+	} else if !errors.Is(err, errCacheMiss) {
+		log.Printf("WARNING: Redis recent repositories cache read failed; loading from the relational database: %v", err)
+	}
+
+	repos, err := s.Store.RecentRepos(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	encoded, err := json.Marshal(repos)
+	if err != nil {
+		log.Printf("WARNING: could not encode recent repositories for Redis cache: %v", err)
+		return repos, nil
+	}
+	if err := s.cache.Set(ctx, recentReposCacheKey, string(encoded), recentReposCacheTTL); err != nil {
+		log.Printf("WARNING: could not write recent repositories to Redis cache: %v", err)
+	}
+	return repos, nil
+}
+
+func (s *RedisStore) AddRecent(ctx context.Context, repo string) error {
+	if err := s.Store.AddRecent(ctx, repo); err != nil {
+		return err
+	}
+	if err := s.cache.Delete(ctx, recentReposCacheKey); err != nil {
+		log.Printf("WARNING: could not invalidate Redis recent repositories cache: %v", err)
+	}
+	return nil
 }
 
 func (s *RedisStore) SaveReport(ctx context.Context, report Report) error {
