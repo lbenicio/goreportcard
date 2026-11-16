@@ -59,11 +59,16 @@ func (c *memoryReportCache) Delete(_ context.Context, key string) error {
 func (*memoryReportCache) Close() error { return nil }
 
 type memoryReportStore struct {
-	report    Report
-	getErr    error
-	saveErr   error
-	getCalls  int
-	saveCalls int
+	report         Report
+	getErr         error
+	saveErr        error
+	addRecentErr   error
+	recentErr      error
+	recent         []string
+	getCalls       int
+	saveCalls      int
+	addRecentCalls int
+	recentCalls    int
 }
 
 func (s *memoryReportStore) GetReport(_ context.Context, repo string) (Report, error) {
@@ -86,9 +91,16 @@ func (s *memoryReportStore) SaveReport(_ context.Context, report Report) error {
 	return nil
 }
 
-func (*memoryReportStore) AddRecent(context.Context, string) error { return nil }
-func (*memoryReportStore) RecentRepos(context.Context) ([]string, error) {
-	return nil, nil
+func (s *memoryReportStore) AddRecent(context.Context, string) error {
+	s.addRecentCalls++
+	return s.addRecentErr
+}
+func (s *memoryReportStore) RecentRepos(context.Context) ([]string, error) {
+	s.recentCalls++
+	if s.recentErr != nil {
+		return nil, s.recentErr
+	}
+	return append([]string(nil), s.recent...), nil
 }
 func (*memoryReportStore) HighScores(context.Context) (int64, []HighScore, error) {
 	return 0, nil, nil
@@ -253,6 +265,134 @@ func TestRedisStoreIgnoresCacheInvalidationFailure(t *testing.T) {
 
 	if err := store.SaveReport(context.Background(), redisTestReport()); err != nil {
 		t.Fatalf("SaveReport() error = %v, want nil after successful PostgreSQL write", err)
+	}
+}
+
+func TestRedisStoreRecentReposUsesCachedList(t *testing.T) {
+	want := []string{"github.com/example/one", "github.com/example/two"}
+	encoded, err := json.Marshal(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache := &memoryReportCache{values: map[string]string{recentReposCacheKey: string(encoded)}}
+	base := &memoryReportStore{}
+	store := &RedisStore{Store: base, cache: cache}
+
+	got, err := store.RecentRepos(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("RecentRepos() = %v, want %v", got, want)
+	}
+	if base.recentCalls != 0 || cache.setCalls != 0 {
+		t.Fatalf("cache hit fell through: database reads=%d Redis writes=%d, want 0", base.recentCalls, cache.setCalls)
+	}
+}
+
+func TestRedisStoreRecentReposFallsBackAndCaches(t *testing.T) {
+	want := []string{"github.com/example/one", "github.com/example/two"}
+	tests := []struct {
+		name  string
+		cache *memoryReportCache
+	}{
+		{name: "miss", cache: &memoryReportCache{values: make(map[string]string)}},
+		{name: "read error", cache: &memoryReportCache{getErr: errors.New("Redis unavailable")}},
+		{name: "invalid JSON", cache: &memoryReportCache{values: map[string]string{recentReposCacheKey: "not JSON"}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			base := &memoryReportStore{recent: want}
+			store := &RedisStore{Store: base, cache: tt.cache}
+
+			got, err := store.RecentRepos(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("RecentRepos() = %v, want %v", got, want)
+			}
+			if base.recentCalls != 1 || tt.cache.setCalls != 1 {
+				t.Fatalf("fallback calls: database reads=%d Redis writes=%d, want 1 each", base.recentCalls, tt.cache.setCalls)
+			}
+			if tt.cache.ttl != recentReposCacheTTL {
+				t.Fatalf("Redis TTL = %s, want %s", tt.cache.ttl, recentReposCacheTTL)
+			}
+			var cached []string
+			if err := json.Unmarshal([]byte(tt.cache.values[recentReposCacheKey]), &cached); err != nil {
+				t.Fatalf("cached value is invalid JSON: %v", err)
+			}
+			if !reflect.DeepEqual(cached, want) {
+				t.Fatalf("cached repositories = %v, want %v", cached, want)
+			}
+		})
+	}
+}
+
+func TestRedisStoreRecentReposKeepsDatabaseResultOnCacheWriteFailure(t *testing.T) {
+	want := []string{"github.com/example/repository"}
+	base := &memoryReportStore{recent: want}
+	cache := &memoryReportCache{setErr: errors.New("Redis unavailable")}
+	store := &RedisStore{Store: base, cache: cache}
+
+	got, err := store.RecentRepos(context.Background())
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("RecentRepos() = (%v, %v), want (%v, nil)", got, err, want)
+	}
+}
+
+func TestRedisStoreRecentReposPropagatesDatabaseError(t *testing.T) {
+	wantErr := errors.New("database unavailable")
+	base := &memoryReportStore{recentErr: wantErr}
+	cache := &memoryReportCache{values: make(map[string]string)}
+	store := &RedisStore{Store: base, cache: cache}
+
+	if _, err := store.RecentRepos(context.Background()); !errors.Is(err, wantErr) {
+		t.Fatalf("RecentRepos() error = %v, want %v", err, wantErr)
+	}
+	if cache.setCalls != 0 {
+		t.Fatalf("Redis Set called %d times, want 0", cache.setCalls)
+	}
+}
+
+func TestRedisStoreAddRecentInvalidatesCacheBestEffort(t *testing.T) {
+	databaseErr := errors.New("database unavailable")
+	tests := []struct {
+		name        string
+		addErr      error
+		deleteErr   error
+		wantErr     error
+		wantDeletes int
+	}{
+		{name: "successful write", wantDeletes: 1},
+		{name: "database write failure", addErr: databaseErr, wantErr: databaseErr},
+		{name: "cache invalidation failure", deleteErr: errors.New("Redis unavailable"), wantDeletes: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			base := &memoryReportStore{addRecentErr: tt.addErr}
+			cache := &memoryReportCache{
+				values:    map[string]string{recentReposCacheKey: "stale"},
+				deleteErr: tt.deleteErr,
+			}
+			store := &RedisStore{Store: base, cache: cache}
+
+			err := store.AddRecent(context.Background(), "github.com/example/repository")
+			if (err == nil) != (tt.wantErr == nil) {
+				t.Fatalf("AddRecent() error = %v, want %v", err, tt.wantErr)
+			}
+			if tt.wantErr != nil && !errors.Is(err, tt.wantErr) {
+				t.Fatalf("AddRecent() error = %v, want %v", err, tt.wantErr)
+			}
+			if base.addRecentCalls != 1 || cache.delCalls != tt.wantDeletes {
+				t.Fatalf("calls: database writes=%d Redis deletes=%d, want 1 and %d", base.addRecentCalls, cache.delCalls, tt.wantDeletes)
+			}
+			if tt.deleteErr == nil && tt.addErr == nil {
+				if _, ok := cache.values[recentReposCacheKey]; ok {
+					t.Fatal("stale recent repositories remained in cache")
+				}
+			}
+		})
 	}
 }
 

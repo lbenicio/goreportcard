@@ -100,6 +100,9 @@ func TestOpenDatabaseRejectsMissingOrUnsupportedURL(t *testing.T) {
 	if _, err := OpenDatabase(context.Background(), "  "); err == nil || err.Error() != "DATABASE_URL is required" {
 		t.Fatalf("OpenDatabase(blank URL) error = %v, want required URL error", err)
 	}
+	if _, err := OpenDatabase(context.Background(), "postgres://%"); err == nil || !strings.Contains(err.Error(), "parse DATABASE_URL") {
+		t.Fatalf("OpenDatabase(malformed URL) error = %v, want URL parse error", err)
+	}
 	if _, err := OpenDatabase(context.Background(), "sqlite://localhost/goreportcard"); err == nil || !strings.Contains(err.Error(), "unsupported DATABASE_URL scheme") {
 		t.Fatalf("OpenDatabase(unsupported URL) error = %v, want unsupported scheme error", err)
 	}
@@ -107,6 +110,19 @@ func TestOpenDatabaseRejectsMissingOrUnsupportedURL(t *testing.T) {
 		if _, err := mysqlDSN(databaseURL); err == nil {
 			t.Errorf("mysqlDSN(%q) succeeded, want invalid MySQL URL error", databaseURL)
 		}
+	}
+}
+
+func TestOpenMySQLValidatesURLAndUsesConnector(t *testing.T) {
+	if _, err := OpenMySQL(context.Background(), "mysql://localhost/db%zz"); err == nil || !strings.Contains(err.Error(), "parse MySQL DATABASE_URL") {
+		t.Fatalf("OpenMySQL(malformed URL) error = %v, want URL parse error", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := OpenMySQL(ctx, "mysql://user:password@127.0.0.1:1/goreportcard")
+	if err == nil || !strings.Contains(err.Error(), "connect to MySQL/MariaDB") {
+		t.Fatalf("OpenMySQL(canceled connection) error = %v, want connection error", err)
 	}
 }
 
