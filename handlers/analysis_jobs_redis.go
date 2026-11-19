@@ -250,7 +250,7 @@ func (m *redisAnalysisManager) processOne(token string) (bool, error) {
 
 	repo, err := m.client.LIndex(m.ctx, analysisProcessingKey, 0).Result()
 	if errors.Is(err, redis.Nil) {
-		repo, err = m.client.RPopLPush(m.ctx, analysisQueueKey, analysisProcessingKey).Result()
+		repo, err = m.client.LMove(m.ctx, analysisQueueKey, analysisProcessingKey, "RIGHT", "LEFT").Result()
 	}
 	if errors.Is(err, redis.Nil) {
 		return false, nil
