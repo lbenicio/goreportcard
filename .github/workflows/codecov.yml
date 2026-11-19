@@ -18,6 +18,16 @@ permissions:
 jobs:
   coverage:
     runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
     steps:
     - uses: actions/checkout@v7
     - name: Set up Go
@@ -27,6 +37,8 @@ jobs:
     - name: Install
       run: make install
     - name: Test
+      env:
+        TEST_REDIS_URL: redis://127.0.0.1:6379/15
       run: make test
     - name: Upload coverage reports to Codecov
       uses: codecov/codecov-action@v5
