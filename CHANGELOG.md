@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+- Add Redis-backed analysis job integration tests and provide Redis in the CI test job.
+
+### Changed
+- Enforce aggregate Go statement coverage above 98% in `make test`.
+- Convert repository analysis panics into failed jobs so the Redis worker can continue processing.
+
 ## [1.2.3] - 2026-11-19
 
 ### Changed
