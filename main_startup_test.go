@@ -42,7 +42,7 @@ func configureApplicationTest(t *testing.T) *startupTestStore {
 	t.Setenv("REDIS_URL", "")
 
 	oldParseFlags, oldFatal := parseFlags, fatal
-	oldOpenDatabase, oldOpenRedis := openDatabaseStore, openRedisStore
+	oldOpenDatabase, oldOpenRedis, oldConfigureRedisAnalysisJobs := openDatabaseStore, openRedisStore, configureRedisAnalysisJobs
 	oldLoadAssets, oldListenAndServe := loadAssets, listenAndServe
 	oldAddr := *addr
 
@@ -55,12 +55,15 @@ func configureApplicationTest(t *testing.T) *startupTestStore {
 	openRedisStore = func(context.Context, storage.Store, string) (closeableStore, error) {
 		return store, nil
 	}
+	configureRedisAnalysisJobs = func(context.Context, string, storage.Store) (func() error, error) {
+		return func() error { return nil }, nil
+	}
 	listenAndServe = func(string, http.Handler) error { return nil }
 	*addr = "127.0.0.1:0"
 
 	t.Cleanup(func() {
 		parseFlags, fatal = oldParseFlags, oldFatal
-		openDatabaseStore, openRedisStore = oldOpenDatabase, oldOpenRedis
+		openDatabaseStore, openRedisStore, configureRedisAnalysisJobs = oldOpenDatabase, oldOpenRedis, oldConfigureRedisAnalysisJobs
 		loadAssets, listenAndServe = oldLoadAssets, oldListenAndServe
 		*addr = oldAddr
 	})

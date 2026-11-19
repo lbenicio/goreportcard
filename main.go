@@ -42,7 +42,8 @@ var (
 	openRedisStore = func(ctx context.Context, store storage.Store, redisURL string) (closeableStore, error) {
 		return storage.OpenRedisCache(ctx, store, redisURL)
 	}
-	loadAssets = func() (fs.FS, error) {
+	configureRedisAnalysisJobs = handlers.ConfigureRedisAnalysisJobs
+	loadAssets                 = func() (fs.FS, error) {
 		return fs.Sub(embedFS, "assets")
 	}
 	listenAndServe = http.ListenAndServe
@@ -138,6 +139,7 @@ func main() {
 }
 
 func run() error {
+	handlers.UseInMemoryAnalysisJobs()
 	if err := os.MkdirAll("_repos/src/github.com", 0755); err != nil && !os.IsExist(err) {
 		return fmt.Errorf("ERROR: could not create repos dir: %w", err)
 	}
@@ -162,6 +164,17 @@ func run() error {
 			}
 		}()
 		appStore = redisStore
+		closeAnalysisJobs, err := configureRedisAnalysisJobs(startupCtx, redisURL, appStore)
+		if err != nil {
+			return fmt.Errorf("ERROR: could not configure Redis analysis jobs: %w", err)
+		}
+		defer func() {
+			if err := closeAnalysisJobs(); err != nil {
+				log.Printf("ERROR: could not close Redis analysis jobs: %v", err)
+			}
+		}()
+	} else {
+		log.Printf("WARNING: REDIS_URL is not set; analysis job state is local to this process")
 	}
 
 	assetsFS, err := loadAssets()

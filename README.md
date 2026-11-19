@@ -29,14 +29,16 @@ DATABASE_URL='mariadb://user:password@localhost:3306/goreportcard?charset=utf8mb
 
 The target database must already exist, and the application role needs permission to create and update schema objects on first startup. The application creates and updates its schema using embedded, database-specific SQL migrations. MySQL and MariaDB URLs use standard URL encoding for special characters in usernames or passwords; `tls=true` can be added for TLS connections. Reports are stored in relational tables for repositories, report summaries, checks, file summaries, and file errors; no report payload is stored as JSON.
 
-Redis is optional. Set `REDIS_URL` to a `redis://` or `rediss://` connection URL to enable five-minute caches for report reads and the shared recent-repositories list:
+Set `REDIS_URL` to a `redis://` or `rediss://` connection URL to enable shared analysis job state and five-minute caches for report reads and the recent-repositories list:
 
 ```
 DATABASE_URL='postgresql://user:password@localhost:5432/goreportcard?sslmode=disable' \
 REDIS_URL='redis://localhost:6379/0' make start
 ```
 
-The selected relational database remains the source of truth. Successful report writes and recent-repository updates invalidate their Redis entries. The homepage also keeps a short-lived in-process snapshot and refreshes it in the background, so slow database or Redis reads do not delay the page. If Redis is unavailable, the application logs a warning and reads from the relational database instead.
+The selected relational database remains the source of truth for completed reports. Redis stores queued/running analysis status and coordinates one analysis worker across app instances, so a submission can be polled through any instance and queued work can resume after a process restart. Successful report writes and recent-repository updates invalidate their Redis cache entries. The homepage also keeps a short-lived in-process snapshot and refreshes it in the background, so slow database or Redis reads do not delay the page. If Redis is unavailable, report and recent-repository cache reads fall back to the relational database, while analysis submissions return an error instead of using inconsistent per-process job state.
+
+For local development, `REDIS_URL` may be omitted when running a single app process; analysis job state then remains in that process's memory. Configure Redis for production and whenever running more than one app instance.
 
 If you have an existing Badger database, stop the old application and import it before starting the service:
 

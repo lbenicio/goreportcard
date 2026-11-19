@@ -37,6 +37,11 @@ type analysisJobSnapshot struct {
 	done   bool
 }
 
+type analysisJobBackend interface {
+	startRequest(context.Context, string, bool, bool, func() (checksResp, error)) error
+	statusRequest(context.Context, string) (analysisJobSnapshot, bool, error)
+}
+
 type analysisManager struct {
 	mu        sync.Mutex
 	jobs      map[string]*analysisJob
@@ -79,6 +84,10 @@ func (m *analysisManager) start(repo string, restartCompleted bool, run func() (
 	return nil
 }
 
+func (m *analysisManager) startRequest(_ context.Context, repo string, restartCompleted, _ bool, run func() (checksResp, error)) error {
+	return m.start(repo, restartCompleted, run)
+}
+
 func (m *analysisManager) execute(job *analysisJob, run func() (checksResp, error)) {
 	m.slots <- struct{}{}
 	var report checksResp
@@ -112,6 +121,11 @@ func (m *analysisManager) status(repo string) (analysisJobSnapshot, bool) {
 	return analysisJobSnapshot{report: job.report, err: job.err, done: job.done}, true
 }
 
+func (m *analysisManager) statusRequest(_ context.Context, repo string) (analysisJobSnapshot, bool, error) {
+	job, ok := m.status(repo)
+	return job, ok, nil
+}
+
 func (m *analysisManager) pruneLocked(now time.Time) {
 	for repo, job := range m.jobs {
 		if job.done && now.Sub(job.completedAt) > analysisJobTTL {
@@ -135,6 +149,7 @@ func (m *analysisManager) pruneLocked(now time.Time) {
 }
 
 var repositoryAnalysisJobs = newAnalysisManager(analysisConcurrency, maxActiveAnalyses)
+var activeAnalysisJobs analysisJobBackend = repositoryAnalysisJobs
 
 type checkJobResponse struct {
 	Pending      bool        `json:"pending,omitempty"`
@@ -144,6 +159,10 @@ type checkJobResponse struct {
 }
 
 func runRepositoryAnalysis(db storage.Store, repo string, forceRefresh bool) (checksResp, error) {
+	return runRepositoryAnalysisContext(context.Background(), db, repo, forceRefresh)
+}
+
+func runRepositoryAnalysisContext(ctx context.Context, db storage.Store, repo string, forceRefresh bool) (checksResp, error) {
 	client := download.NewProxyClient("https://proxy.golang.org")
 	moduleName, err := client.ModuleName(repo)
 	if err != nil {
@@ -154,7 +173,7 @@ func runRepositoryAnalysis(db storage.Store, repo string, forceRefresh bool) (ch
 	}
 
 	log.Printf("Checking repo %q...", repo)
-	resp, err := newChecksResp(context.Background(), db, repo, forceRefresh)
+	resp, err := newChecksResp(ctx, db, repo, forceRefresh)
 	if err != nil {
 		return checksResp{}, fmt.Errorf("could not analyze the repository: %w", err)
 	}
@@ -165,10 +184,14 @@ func handleChecks(w http.ResponseWriter, r *http.Request, db storage.Store, repo
 	analyze := func(repo string, forceRefresh bool) (checksResp, error) {
 		return runRepositoryAnalysis(db, repo, forceRefresh)
 	}
-	handleChecksWithManager(w, r, db, repo, repositoryAnalysisJobs, analyze)
+	handleChecksWithBackend(w, r, db, repo, activeAnalysisJobs, analyze)
 }
 
 func handleChecksWithManager(w http.ResponseWriter, r *http.Request, db storage.Store, repo string, manager *analysisManager, analyze func(string, bool) (checksResp, error)) {
+	handleChecksWithBackend(w, r, db, repo, manager, analyze)
+}
+
+func handleChecksWithBackend(w http.ResponseWriter, r *http.Request, db storage.Store, repo string, manager analysisJobBackend, analyze func(string, bool) (checksResp, error)) {
 	if r.Method != http.MethodGet && r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -192,7 +215,7 @@ func handleChecksWithManager(w http.ResponseWriter, r *http.Request, db storage.
 	run := func() (checksResp, error) {
 		return analyze(repo, forceRefresh)
 	}
-	if err := manager.start(repo, restartCompleted, run); err != nil {
+	if err := manager.startRequest(r.Context(), repo, restartCompleted, forceRefresh, run); err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
@@ -202,11 +225,19 @@ func handleChecksWithManager(w http.ResponseWriter, r *http.Request, db storage.
 		return
 	}
 
-	writeAnalysisJobStatus(w, manager, repo)
+	writeAnalysisJobStatusWithBackend(w, manager, r.Context(), repo)
 }
 
 func writeAnalysisJobStatus(w http.ResponseWriter, manager *analysisManager, repo string) {
-	job, ok := manager.status(repo)
+	writeAnalysisJobStatusWithBackend(w, manager, context.Background(), repo)
+}
+
+func writeAnalysisJobStatusWithBackend(w http.ResponseWriter, manager analysisJobBackend, ctx context.Context, repo string) {
+	job, ok, err := manager.statusRequest(ctx, repo)
+	if err != nil {
+		http.Error(w, "Could not read analysis job status: "+err.Error(), http.StatusServiceUnavailable)
+		return
+	}
 	if !ok {
 		http.Error(w, "analysis job is no longer available; retry the request", http.StatusServiceUnavailable)
 		return

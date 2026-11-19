@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-11-19
+
+### Changed
+- Store asynchronous repository analysis jobs in Redis and coordinate a single worker across app instances, preserving queued jobs and poll status across restarts.
+- Require Redis for analysis submissions when `REDIS_URL` is configured; retain process-local job state for single-process local development without Redis.
+
 ## [1.2.2] - 2026-11-18
 
 ### Added
