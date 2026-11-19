@@ -469,7 +469,8 @@ func TestRedisAnalysisLeaseRenewalAndHelpers(t *testing.T) {
 		manager.releaseLease("worker-token")
 	})
 
-	if analysisJobKey("repo") == analysisJobKey("other") || analysisJobKey("repo") != analysisJobKey("repo") {
+	key := analysisJobKey("repo")
+	if key == analysisJobKey("other") || key != analysisJobKey("repo") {
 		t.Fatal("analysis job key is not a stable hash of the repository")
 	}
 	first, err := analysisWorkerToken()
