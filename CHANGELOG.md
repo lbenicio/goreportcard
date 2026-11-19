@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-11-18
+
+### Added
+- Poll homepage report submissions, show toast status notifications, and add completed reports to the recent list.
+
+### Changed
+- Clear the repository field after a report completes while keeping the homepage open.
+
+### Fixed
+- Remove Bulma's stale source-map reference that caused a missing asset request.
+
 ## [1.2.1] - 2026-11-16
 
 ### Added

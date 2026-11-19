@@ -35,6 +35,25 @@ time {
     display: none;
 }
 
+#notifications {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    z-index: 1000;
+    width: calc(100% - 2rem);
+    max-width: 32rem;
+}
+
+#notifications .notification {
+    box-shadow: 0 0.5rem 1.5rem rgba(10, 10, 10, 0.2);
+}
+
+#notifications .notification-link {
+    display: block;
+    margin-top: 0.5rem;
+    font-weight: 600;
+}
+
 .menu.results .percentage {
     float: right;
 }

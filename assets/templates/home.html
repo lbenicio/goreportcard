@@ -28,7 +28,7 @@
                         <th>Recently Generated</th>
                       </tr>
                     </thead>
-                    <tbody>
+                    <tbody id="recent-repositories">
                         [[ range .Recent ]]
                         <tr>
                             <td class="table-link"><a href="/report/[[ . ]]">[[ . ]]</a></td>
@@ -63,15 +63,12 @@
   <script src="https://code.jquery.com/jquery-3.2.1.min.js" integrity="sha256-hwg4gsxgFZhOsEEamdOYGBf13FyQuiTwlAQgxVSNgt4=" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/handlebars@4.7.7/dist/handlebars.min.js" integrity="sha256-ZSnrWNaPzGe8v25yP0S6YaMaDLMTDHC+4mHTw0xydEk=" crossorigin="anonymous"></script>
   <script id="template-alert" type="text/x-handlebars-template">
-      <div class="notification is-warning">
+      <div class="notification" role="status" aria-live="polite">
           <button class="delete"></button>
-          {{message}}
+          <span class="notification-message">{{message}}</span>
       </div>
-    </div>
   </script>
   <script type="text/javascript">
-    var loading = false;
-
     // initialize handlebars templates
     var templates = {};
     $("script[id^=template]").each(function(){
@@ -80,47 +77,112 @@
       templates[name] = Handlebars.compile(source);
     });
 
-    function alertMessage(msg){
+    var activeSubmission = false;
+    var toastTimer;
+
+    function alertMessage(msg, type, reportURL){
       var html = templates.alert({message: msg});
       var $alert = $(html);
+      $alert.addClass(type || "is-warning");
+      if (type === "is-danger") {
+          $alert.attr("role", "alert").attr("aria-live", "assertive");
+      }
       $alert.find(".delete").on("click", function(){
           $(this).closest(".notification").remove();
       });
       $("#notifications").children().remove();
       $alert.hide();
+      if (reportURL) {
+          $("<a>", {"class": "notification-link", href: reportURL, text: "View report"}).appendTo($alert);
+      }
       $alert.appendTo("#notifications");
       $alert.slideDown();
+      window.clearTimeout(toastTimer);
+      if (type === "is-success") {
+          toastTimer = window.setTimeout(function(){ $alert.slideUp(200, function(){ $alert.remove(); }); }, 8000);
+      }
     }
 
-    var loadData = function(getRequest){
-      loading = true;
+    function updateToastMessage(msg){
+      var $message = $("#notifications .notification-message");
+      if ($message.length) {
+          $message.text(msg);
+      } else {
+          alertMessage(msg, "is-info");
+      }
+    }
+
+    function finishSubmission(){
+      activeSubmission = false;
+      $("#check_form .button").removeClass("is-loading").prop("disabled", false);
+    }
+
+    function addRecentReport(repo, reportURL){
+      var $recent = $("#recent-repositories");
+      $recent.find("a").filter(function(){ return $(this).text() === repo; }).closest("tr").remove();
+      var $link = $("<a>", {href: reportURL, text: repo});
+      var $row = $("<tr>").append($("<td>").addClass("table-link").append($link));
+      $recent.prepend($row);
+      $recent.children("tr").slice(5).remove();
+    }
+
+    function pollReport(repo){
+      $.ajax({
+        type: "GET",
+        url: "/checks",
+        data: {repo: repo, refresh: 1},
+        dataType: "json"
+      }).done(function(data){
+        if (data.pending) {
+          updateToastMessage("Generating report for " + repo + "…");
+          window.setTimeout(function(){ pollReport(repo); }, data.retry_after_ms || 2000);
+          return;
+        }
+        if (!data.report || !data.redirect) {
+          finishSubmission();
+          alertMessage("The report request finished without a report. Please try again.", "is-warning");
+          return;
+        }
+        $("#check_form input[name=repo]").val("");
+        addRecentReport(data.report.repo, data.redirect);
+        finishSubmission();
+        alertMessage("Report generated for " + data.report.repo, "is-success", data.redirect);
+      }).fail(function(xhr){
+        finishSubmission();
+        alertMessage("There was an error processing your request: " + xhr.responseText, "is-danger");
+      });
+    }
+
+    var loadData = function(){
+      if (activeSubmission) {
+        return false;
+      }
       var $form = $(this),
-          url = $form.attr("action"),
-          method = $form.attr("method"),
-          data = {};
-        $form.serializeArray().map(function(x){data[x.name] = x.value;});
+          repo = $.trim($form.find("input[name=repo]").val());
 
-        if(!data["repo"]) {
-            alertMessage("Input cannot be empty. Please enter a valid repository path");
-            return false;
-        }
-        $("#check_form .button").addClass("is-loading");
+      if (!repo) {
+        alertMessage("Input cannot be empty. Please enter a valid repository path", "is-warning");
+        return false;
+      }
 
-        $.ajax({
-          type: getRequest ? "GET" : "POST",
-          url: url,
-          data: data,
-          dataType: "json"
-      }).fail(function(xhr, status, err){
-          alertMessage("There was an error processing your request: " + xhr.responseText);
-      }).done(function(data, textStatus, jqXHR){
-        if (data.redirect) {
-            window.location.href = data.redirect;
+      activeSubmission = true;
+      $("#check_form .button").addClass("is-loading").prop("disabled", true);
+      alertMessage("Submitting " + repo + " for analysis…", "is-info");
+      $.ajax({
+        type: $form.attr("method"),
+        url: $form.attr("action"),
+        data: {repo: repo},
+        dataType: "json"
+      }).done(function(data){
+        if (!data.redirect) {
+          finishSubmission();
+          alertMessage("The report request could not be started. Please try again.", "is-warning");
+          return;
         }
-      }).always(function(){
-          loading = false;
-          $("a.refresh-button").removeClass("is-loading");
-          $("#check_form .button").removeClass("is-loading");
+        pollReport(repo);
+      }).fail(function(xhr){
+        finishSubmission();
+        alertMessage("There was an error processing your request: " + xhr.responseText, "is-danger");
       });
       return false;
     };
