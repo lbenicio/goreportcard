@@ -4,6 +4,7 @@
 
 ### Added
 - Add Redis-backed analysis job integration tests and provide Redis in the CI test job.
+- Start a temporary Redis server for local test runs when `TEST_REDIS_URL` is unset.
 
 ### Changed
 - Enforce aggregate Go statement coverage above 98% in `make test`.
