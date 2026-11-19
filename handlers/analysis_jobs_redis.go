@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"strconv"
 	"strings"
@@ -105,11 +106,23 @@ return 1
 )
 
 type redisAnalysisManager struct {
-	client  *redis.Client
-	store   storage.Store
-	ctx     context.Context
-	cancel  context.CancelFunc
-	workers sync.WaitGroup
+	client      *redis.Client
+	store       storage.Store
+	analyze     func(context.Context, storage.Store, string, bool) (checksResp, error)
+	workerToken func() (string, error)
+	workerLease time.Duration
+	pollDelay   time.Duration
+	ctx         context.Context
+	cancel      context.CancelFunc
+	workers     sync.WaitGroup
+}
+
+type redisAnalysisManagerOptions struct {
+	analyze     func(context.Context, storage.Store, string, bool) (checksResp, error)
+	workerToken func() (string, error)
+	workerLease time.Duration
+	pollDelay   time.Duration
+	startWorker bool
 }
 
 // ConfigureRedisAnalysisJobs starts a single globally coordinated analysis worker
@@ -136,29 +149,65 @@ func UseInMemoryAnalysisJobs() {
 }
 
 func newRedisAnalysisManager(ctx context.Context, redisURL string, store storage.Store) (*redisAnalysisManager, error) {
+	return newRedisAnalysisManagerWithOptions(ctx, redisURL, store, redisAnalysisManagerOptions{
+		analyze:     runRepositoryAnalysisContext,
+		workerLease: analysisWorkerLease,
+		pollDelay:   analysisJobPollDelay,
+		startWorker: true,
+	})
+}
+
+func newRedisAnalysisManagerWithOptions(ctx context.Context, redisURL string, store storage.Store, options redisAnalysisManagerOptions) (*redisAnalysisManager, error) {
 	if strings.TrimSpace(redisURL) == "" {
 		return nil, errors.New("REDIS_URL is required for shared analysis jobs")
 	}
-	options, err := redis.ParseURL(strings.TrimSpace(redisURL))
+	clientOptions, err := redis.ParseURL(strings.TrimSpace(redisURL))
 	if err != nil {
 		return nil, fmt.Errorf("parse REDIS_URL for analysis jobs: %w", err)
 	}
-	options.DialTimeout = 2 * time.Second
-	options.ReadTimeout = 3 * time.Second
-	options.WriteTimeout = 3 * time.Second
-	options.PoolTimeout = 3 * time.Second
-	options.MaxRetries = -1
+	clientOptions.DialTimeout = 2 * time.Second
+	clientOptions.ReadTimeout = 3 * time.Second
+	clientOptions.WriteTimeout = 3 * time.Second
+	clientOptions.PoolTimeout = 3 * time.Second
+	clientOptions.MaxRetries = -1
 
-	client := redis.NewClient(options)
+	client := redis.NewClient(clientOptions)
 	if err := client.Ping(ctx).Err(); err != nil {
 		_ = client.Close()
 		return nil, fmt.Errorf("connect to Redis for analysis jobs: %w", err)
 	}
 	workerCtx, cancel := context.WithCancel(context.Background())
-	manager := &redisAnalysisManager{client: client, store: store, ctx: workerCtx, cancel: cancel}
-	manager.workers.Add(1)
-	go manager.runWorker()
+	if options.analyze == nil {
+		options.analyze = runRepositoryAnalysisContext
+	}
+	if options.workerToken == nil {
+		options.workerToken = analysisWorkerToken
+	}
+	if options.workerLease <= 0 {
+		options.workerLease = analysisWorkerLease
+	}
+	if options.pollDelay <= 0 {
+		options.pollDelay = analysisJobPollDelay
+	}
+	manager := &redisAnalysisManager{
+		client:      client,
+		store:       store,
+		analyze:     options.analyze,
+		workerToken: options.workerToken,
+		workerLease: options.workerLease,
+		pollDelay:   options.pollDelay,
+		ctx:         workerCtx,
+		cancel:      cancel,
+	}
+	if options.startWorker {
+		manager.startWorker()
+	}
 	return manager, nil
+}
+
+func (m *redisAnalysisManager) startWorker() {
+	m.workers.Add(1)
+	go m.runWorker()
 }
 
 func (m *redisAnalysisManager) Close() error {
@@ -212,13 +261,13 @@ func (m *redisAnalysisManager) statusRequest(ctx context.Context, repo string) (
 func (m *redisAnalysisManager) runWorker() {
 	defer m.workers.Done()
 	for m.ctx.Err() == nil {
-		token, err := analysisWorkerToken()
+		token, err := m.workerToken()
 		if err != nil {
 			log.Printf("ERROR: could not create analysis worker token: %v", err)
 			m.waitForWork()
 			continue
 		}
-		acquired, err := m.client.SetNX(m.ctx, analysisWorkerLockKey, token, analysisWorkerLease).Result()
+		acquired, err := m.client.SetNX(m.ctx, analysisWorkerLockKey, token, m.workerLease).Result()
 		if err != nil {
 			if m.ctx.Err() == nil {
 				log.Printf("WARNING: could not acquire analysis worker lease: %v", err)
@@ -286,7 +335,7 @@ func (m *redisAnalysisManager) processOne(token string) (bool, error) {
 	workCtx, cancelWork := context.WithCancel(m.ctx)
 	heartbeatDone := make(chan struct{})
 	go m.renewLease(workCtx, cancelWork, token, heartbeatDone)
-	report, runErr := runRepositoryAnalysisContext(workCtx, m.store, repo, forceRefresh)
+	report, runErr := runAnalysisSafely(workCtx, m.analyze, m.store, repo, forceRefresh)
 	cancelWork()
 	<-heartbeatDone
 	if m.ctx.Err() != nil {
@@ -325,7 +374,7 @@ func (m *redisAnalysisManager) processOne(token string) (bool, error) {
 
 func (m *redisAnalysisManager) renewLease(ctx context.Context, cancel context.CancelFunc, token string, done chan<- struct{}) {
 	defer close(done)
-	ticker := time.NewTicker(analysisWorkerLease / 3)
+	ticker := time.NewTicker(m.workerLease / 3)
 	defer ticker.Stop()
 	for {
 		select {
@@ -333,7 +382,7 @@ func (m *redisAnalysisManager) renewLease(ctx context.Context, cancel context.Ca
 			return
 		case <-ticker.C:
 			renewCtx, stop := context.WithTimeout(ctx, 5*time.Second)
-			renewed, err := renewAnalysisLeaseScript.Run(renewCtx, m.client, []string{analysisWorkerLockKey}, token, analysisWorkerLease.Milliseconds()).Int()
+			renewed, err := renewAnalysisLeaseScript.Run(renewCtx, m.client, []string{analysisWorkerLockKey}, token, m.workerLease.Milliseconds()).Int()
 			stop()
 			if err != nil {
 				log.Printf("WARNING: could not renew analysis worker lease: %v", err)
@@ -357,12 +406,21 @@ func (m *redisAnalysisManager) releaseLease(token string) {
 }
 
 func (m *redisAnalysisManager) waitForWork() {
-	timer := time.NewTimer(analysisJobPollDelay)
+	timer := time.NewTimer(m.pollDelay)
 	defer timer.Stop()
 	select {
 	case <-m.ctx.Done():
 	case <-timer.C:
 	}
+}
+
+func runAnalysisSafely(ctx context.Context, analyze func(context.Context, storage.Store, string, bool) (checksResp, error), store storage.Store, repo string, forceRefresh bool) (report checksResp, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("analysis failed unexpectedly: %v", recovered)
+		}
+	}()
+	return analyze(ctx, store, repo, forceRefresh)
 }
 
 func analysisJobKey(repo string) string {
@@ -371,8 +429,12 @@ func analysisJobKey(repo string) string {
 }
 
 func analysisWorkerToken() (string, error) {
+	return analysisWorkerTokenFrom(rand.Reader)
+}
+
+func analysisWorkerTokenFrom(reader io.Reader) (string, error) {
 	var token [16]byte
-	if _, err := rand.Read(token[:]); err != nil {
+	if _, err := io.ReadFull(reader, token[:]); err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(token[:]), nil

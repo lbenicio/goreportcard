@@ -20,7 +20,10 @@ staticcheck:
 	staticcheck ./...
 
 test:
-	 go test -coverprofile=coverage.txt ./...
+	go test -coverprofile=coverage.txt ./...
+	@coverage=$$(go tool cover -func=coverage.txt | awk '/^total:/ { gsub("%", "", $$3); print $$3 }'); \
+		echo "Total statement coverage: $${coverage}%"; \
+		awk -v coverage="$${coverage}" 'BEGIN { if (coverage <= 98) { print "Coverage must be above 98%"; exit 1 } }'
 
 start:
 	 go run main.go

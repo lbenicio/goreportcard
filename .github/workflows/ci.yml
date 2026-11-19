@@ -33,6 +33,15 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
     steps:
     - uses: actions/checkout@v7
     - name: Set up Go
@@ -44,6 +53,7 @@ jobs:
     - name: Test
       env:
         TEST_MYSQL_DATABASE_URL: mysql://root:test@127.0.0.1:3306/mysql
+        TEST_REDIS_URL: redis://127.0.0.1:6379/15
       run: make test
   build:
     runs-on: ubuntu-latest
