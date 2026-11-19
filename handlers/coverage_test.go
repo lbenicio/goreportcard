@@ -64,6 +64,56 @@ func (s *coverageStore) HighScores(ctx context.Context) (int64, []storage.HighSc
 	return s.testStore.HighScores(ctx)
 }
 
+func setRecentReposCacheForTest(t *testing.T, items []string) {
+	t.Helper()
+	cache.mux.Lock()
+	oldItems := append([]string(nil), cache.items...)
+	oldCount := cache.count
+	oldRefreshing := cache.refreshing
+	oldLastAttempt := cache.lastAttempt
+	oldLastUpdated := cache.lastUpdated
+	cache.items = append([]string(nil), items...)
+	cache.count = 0
+	cache.refreshing = false
+	cache.lastAttempt = time.Now()
+	cache.lastUpdated = time.Now()
+	cache.mux.Unlock()
+	t.Cleanup(func() {
+		cache.mux.Lock()
+		cache.items = oldItems
+		cache.count = oldCount
+		cache.refreshing = oldRefreshing
+		cache.lastAttempt = oldLastAttempt
+		cache.lastUpdated = oldLastUpdated
+		cache.mux.Unlock()
+	})
+}
+
+func waitForRecentReposRefresh(t *testing.T) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		cache.mux.Lock()
+		refreshing := cache.refreshing
+		cache.mux.Unlock()
+		if !refreshing {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("recent repository refresh did not finish")
+}
+
+type signalRecentReposCoverageStore struct {
+	*coverageStore
+	called chan struct{}
+}
+
+func (s *signalRecentReposCoverageStore) RecentRepos(ctx context.Context) ([]string, error) {
+	close(s.called)
+	return s.coverageStore.RecentRepos(ctx)
+}
+
 func TestGetFromCacheReportsMissingAndStoreErrors(t *testing.T) {
 	_, err := getFromCache(context.Background(), &coverageStore{}, "github.com/example/missing")
 	var missing notFoundError
@@ -693,6 +743,7 @@ func TestHighScoresHandlerRendersScoresAndHandlesFailures(t *testing.T) {
 }
 
 func TestHomeHandlerReportsTemplateLoadAndExecutionErrors(t *testing.T) {
+	setRecentReposCacheForTest(t, []string{"one", "two", "three", "four", "five"})
 	handler := &GRCHandler{AssetsFS: http.FS(fstest.MapFS{})}
 	response := httptest.NewRecorder()
 	handler.HomeHandler(response, httptest.NewRequest(http.MethodGet, "/", nil), &coverageStore{})
@@ -712,17 +763,7 @@ func TestHomeHandlerReportsTemplateLoadAndExecutionErrors(t *testing.T) {
 }
 
 func TestHomeHandlerUsesRecentCacheAndSurvivesRecentStoreErrors(t *testing.T) {
-	oldItems, oldCount := cache.items, cache.count
-	t.Cleanup(func() {
-		cache.mux.Lock()
-		cache.items, cache.count = oldItems, oldCount
-		cache.mux.Unlock()
-	})
-
-	cache.mux.Lock()
-	cache.items = []string{"github.com/example/one", "github.com/example/two", "github.com/example/three", "github.com/example/four", "github.com/example/five"}
-	cache.count = 0
-	cache.mux.Unlock()
+	setRecentReposCacheForTest(t, []string{"github.com/example/one", "github.com/example/two", "github.com/example/three", "github.com/example/four", "github.com/example/five"})
 
 	response := httptest.NewRecorder()
 	(&GRCHandler{AssetsFS: http.Dir("../assets")}).HomeHandler(response, httptest.NewRequest(http.MethodGet, "/", nil), &coverageStore{})
@@ -733,12 +774,22 @@ func TestHomeHandlerUsesRecentCacheAndSurvivesRecentStoreErrors(t *testing.T) {
 	cache.mux.Lock()
 	cache.items = nil
 	cache.count = 0
+	cache.lastAttempt = time.Time{}
+	cache.lastUpdated = time.Time{}
+	cache.refreshing = false
 	cache.mux.Unlock()
+	recentStore := &signalRecentReposCoverageStore{coverageStore: &coverageStore{recentErr: errors.New("database offline")}, called: make(chan struct{})}
 	response = httptest.NewRecorder()
-	(&GRCHandler{AssetsFS: http.Dir("../assets")}).HomeHandler(response, httptest.NewRequest(http.MethodGet, "/", nil), &coverageStore{recentErr: errors.New("database offline")})
+	(&GRCHandler{AssetsFS: http.Dir("../assets")}).HomeHandler(response, httptest.NewRequest(http.MethodGet, "/", nil), recentStore)
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "Recently Generated") {
 		t.Fatalf("recent store error response = (%d, %s), want rendered homepage", response.Code, response.Body.String())
 	}
+	select {
+	case <-recentStore.called:
+	case <-time.After(time.Second):
+		t.Fatal("recent repository refresh did not call the store")
+	}
+	waitForRecentReposRefresh(t)
 }
 
 func TestAboutAndSunsetHandlersRenderAndReportTemplateErrors(t *testing.T) {

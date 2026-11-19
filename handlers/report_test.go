@@ -76,10 +76,7 @@ func assertMaintainerUI(t *testing.T, body string) {
 }
 
 func TestHomePageUsesMaintainerUI(t *testing.T) {
-	cache.mux.Lock()
-	cache.items = nil
-	cache.count = 0
-	cache.mux.Unlock()
+	setRecentReposCacheForTest(t, []string{"one", "two", "three", "four", "five"})
 
 	handler := GRCHandler{AssetsFS: http.Dir("../assets")}
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
