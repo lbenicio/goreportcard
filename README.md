@@ -103,20 +103,6 @@ misspell ............ 100%
 
 Go Report Card is an open source project run by volunteers, and contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for development and pull request guidelines, and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for community standards. For questions or feature proposals, contact the maintainer through the [contact form](https://lbenicio.dev/contact/). For security reports, see [SECURITY.md](SECURITY.md).
 
-### Academic Citation
-
-If you use Go Report Card for academic purposes, please use the following citation:
-
-```
-@Misc{schaaf-smith-goreportcard,
-    author = {Schaaf, Herman and Smith, Shawn},
-    title  = {Go Report Card: A report card for your Go application},
-    year   = {2015--},
-    url    = {https://www.goreportcard.com/},
-    note   = {[Online; accessed <today>]}
-}
-```
-
 ### License
 
 The code is licensed under the GNU General Public License v3.0. See [LICENSE.txt](LICENSE.txt) for the full terms.

@@ -23,6 +23,8 @@ RUN set -eu; \
     mkdir -p "$runtime/usr/bin" "$runtime$git_exec_path"; \
     cp /usr/bin/git /usr/bin/unzip /usr/bin/wc "$runtime/usr/bin/"; \
     cp -a "$git_exec_path/." "$runtime$git_exec_path/"; \
+    mkdir -p "$runtime/usr/share/git-core"; \
+    cp -a /usr/share/git-core/templates "$runtime/usr/share/git-core/"; \
     { \
         for binary in /usr/bin/git /usr/bin/unzip /usr/bin/wc; do \
             ldd "$binary" 2>/dev/null || true; \
