@@ -347,3 +347,19 @@ html[data-theme="dark"] .sunset-signoff {
 html[data-theme="dark"] .theme-toggle {
     white-space: nowrap;
 }
+
+@media screen and (max-width: 768px) {
+    .header-left {
+        height: 75px;
+    }
+
+    .header-toggle {
+        width: 75px;
+        height: 75px;
+    }
+
+    .header-menu .header-item {
+        box-sizing: border-box;
+        min-height: 68px;
+    }
+}
