@@ -9,6 +9,7 @@ coverage.out
 *.test
 **/*_test.go
 **/testdata/
+docs/
 .env
 .env.*
 !.env.example

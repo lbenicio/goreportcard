@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- Add a categorized documentation collection under `docs/` with global and local indexes.
 - Add debug, info, warning, and error log levels with configurable terminal colors.
 - Add help and version flags to the server and CLI, plus a sample `.env.example` configuration.
 

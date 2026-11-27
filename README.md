@@ -6,6 +6,8 @@
 
 A web application that generates a report on the quality of an open source Go project. It uses several measures, including `gofmt`, `go vet`, `go lint` and `gocyclo`. The web interface supports light and dark themes, follows your system preference by default, and remembers a manual selection. To get a report on your own project, try [goreportcard.lbenicio.dev](https://goreportcard.lbenicio.dev).
 
+Browse the [documentation index](docs/README.md) for installation, configuration, architecture, operations, development, and project policies.
+
 ### Installation
 
 ```
@@ -55,7 +57,7 @@ The server supports `-h`/`--help` and `-v`/`--version`. Set `HTTP_ADDR` or pass 
 Once the server starts, you should see
 
 ```
-Running on :8000...
+[INFO] Running on :8000 ...
 ```
 
 Navigate to `localhost:8000` and you should see the Go Report Card front page.
