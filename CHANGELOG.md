@@ -8,6 +8,7 @@
 - Start a temporary Redis server for local test runs when `TEST_REDIS_URL` is unset.
 
 ### Changed
+- License the project under GNU GPL version 3.
 - Enforce aggregate Go statement coverage above 98% in `make test`.
 - Convert repository analysis panics into failed jobs so the Redis worker can continue processing.
 - Isolate recent-repository cache state and stabilize Redis analysis-key assertions in handler tests.

@@ -2,9 +2,9 @@
 
 [![Go Report Card](https://goreportcard.lbenicio.dev/badge/github.com/lbenicio/goreportcard)](https://goreportcard.lbenicio.dev/report/github.com/lbenicio/goreportcard)
 [![Coverage Status](https://codecov.io/github/lbenicio/goreportcard/coverage.svg?branch=main)](https://codecov.io/github/lbenicio/goreportcard?branch=main)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/kubernetes/dashboard/blob/master/LICENSE.txt)
+[![License](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE.txt)
 
-A web application that generates a report on the quality of an open source Go project. It uses several measures, including `gofmt`, `go vet`, `go lint` and `gocyclo`. To get a report on your own project, try [goreportcard.lbenicio.dev](https://goreportcard.lbenicio.dev).
+A web application that generates a report on the quality of an open source Go project. It uses several measures, including `gofmt`, `go vet`, `go lint` and `gocyclo`. The web interface supports light and dark themes, follows your system preference by default, and remembers a manual selection. To get a report on your own project, try [goreportcard.lbenicio.dev](https://goreportcard.lbenicio.dev).
 
 ### Installation
 
@@ -127,4 +127,4 @@ If you use Go Report Card for academic purposes, please use the following citati
 
 ### License
 
-The code is licensed under the permissive Apache v2.0 license. [Read this](https://tldrlegal.com/license/apache-license-2.0-(apache-2.0)) for a summary.
+The code is licensed under the GNU General Public License v3.0. See [LICENSE.txt](LICENSE.txt) for the full terms.
