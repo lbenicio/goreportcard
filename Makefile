@@ -4,12 +4,12 @@ build:
 	go build ./...
 
 install:
-	./scripts/make-install.sh
+	bash /scripts/install.sh
 
 lint: fmt vet staticcheck misspell
 
 fmt:
-	./scripts/gofmt.sh
+	bash /scripts/gofmt.sh
 
 vet:
 	go vet ./check ./cmd/... ./download ./handlers ./tools/...
@@ -20,7 +20,7 @@ staticcheck:
 	staticcheck ./...
 
 test:
-	./scripts/test.sh
+	bash /scripts/test.sh
 
 start:
 	 go run main.go

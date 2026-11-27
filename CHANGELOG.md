@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.2.4] - 2026-11-27
+
 ### Added
 - Add a system-aware dark theme with a persistent manual toggle.
 - Add Redis-backed analysis job integration tests and configure Redis in CI and Codecov workflows.
