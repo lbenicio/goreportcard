@@ -7,7 +7,7 @@ help: ## Show this help message
 build: ## Build all Go packages
 	go build ./...
 
-install: ## Install development tools
+install: ## Download modules and install analysis tools
 	bash scripts/install.sh
 
 lint: fmt vet staticcheck misspell ## Run formatting, vet, staticcheck, and misspell
@@ -20,8 +20,7 @@ vet: ## Run go vet
 	go vet ./main.go
 
 staticcheck: ## Run staticcheck
-	@[ -x "$(shell which staticcheck)" ] || go install ./vendor/honnef.co/go/tools/cmd/staticcheck
-	staticcheck ./...
+	go tool staticcheck ./...
 
 test: ## Run tests and enforce coverage threshold
 	bash scripts/test.sh
@@ -30,5 +29,4 @@ start: ## Start the web application
 	 go run main.go
 
 misspell: ## Check Go source spelling
-	@[ -x "$(shell which misspell)" ] || go install ./vendor/github.com/client9/misspell/cmd/misspell
-	find . -name '*.go' -not -path './vendor/*' -not -path './_repos/*' -not -path './download/test_downloads/*' -not -path './check/testdata/*' | xargs misspell -error
+	find . -name '*.go' -not -path './_repos/*' -not -path './download/test_downloads/*' -not -path './check/testdata/*' | xargs go tool misspell -error

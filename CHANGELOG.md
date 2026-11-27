@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Changed
+- Download application and development tool dependencies through Go modules instead of committing a vendor tree.
+
 ### Removed
 - Remove the legacy embedded database importer.
 

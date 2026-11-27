@@ -3,7 +3,7 @@
 go_files=()
 while IFS= read -r -d '' file; do
     case "$file" in
-        *vendor*|*_repos*|*testrepo*) continue ;;
+        *_repos*|*testrepo*) continue ;;
     esac
     go_files+=("$file")
 done < <(find . -name '*.go' -print0)
