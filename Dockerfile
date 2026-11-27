@@ -38,6 +38,7 @@ RUN set -eu; \
 
 FROM gcr.io/distroless/cc-debian13:nonroot
 
+# The runtime includes Go analysis tools but no C compiler.
 ENV GOROOT=/usr/local/go \
     GOCACHE=/tmp/go-build-cache \
     GOMODCACHE=/tmp/go-mod-cache \
