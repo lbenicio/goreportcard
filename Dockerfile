@@ -8,7 +8,7 @@ COPY . $GOPATH/src/github.com/lbenicio/goreportcard
 
 WORKDIR $GOPATH/src/github.com/lbenicio/goreportcard
 
-RUN ./scripts/make-install.sh
+RUN ./scripts/install.sh
 
 EXPOSE 8000
 

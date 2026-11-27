@@ -1,0 +1,224 @@
+name: Deploy production
+
+on:
+  # Release creation via the repository's GITHUB_TOKEN does not start workflows
+  # from the release event, so also wait for the successful Release workflow run.
+  release:
+    types: [published]
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      (github.event_name == 'release' && github.event.release.prerelease == false) ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 20
+    steps:
+      - name: Check out released source
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.release.tag_name || github.event.workflow_run.head_sha }}
+
+      - name: Determine release tag
+        id: release
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_EVENT_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          release_tag="$RELEASE_EVENT_TAG"
+          if [[ -z "$release_tag" ]]; then
+            release_tag="$(python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          changelog = Path("CHANGELOG.md").read_text()
+          heading = re.search(r"(?m)^## \[(\d+\.\d+\.\d+)\][^\n]*$", changelog)
+          if heading is None:
+              raise SystemExit("CHANGELOG.md has no SemVer release heading")
+          print(heading.group(1))
+          PY
+            )"
+          fi
+
+          if [[ ! "$release_tag" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Expected a stable SemVer release tag, got '$release_tag'."
+            exit 1
+          fi
+          printf 'tag=%s\n' "$release_tag" >> "$GITHUB_OUTPUT"
+
+      - name: Confirm the GitHub release is published
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          release_file="$RUNNER_TEMP/github-release.json"
+          gh release view "$RELEASE_TAG" --json isDraft,isPrerelease,publishedAt > "$release_file"
+          python3 - "$release_file" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as release_file:
+              release = json.load(release_file)
+          if release["isDraft"] or release["isPrerelease"] or not release["publishedAt"]:
+              raise SystemExit("The release is not a published stable release")
+          PY
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v4.7.0
+        with:
+          username: ${{ secrets.DOCKER_USER }}
+          password: ${{ secrets.DOCKER_PAT }}
+
+      - name: Confirm the multi-platform Docker Hub image was published
+        env:
+          DOCKER_USER: ${{ secrets.DOCKER_USER }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$DOCKER_USER" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
+            echo "::error::DOCKER_USER is missing or is not a valid Docker Hub username."
+            exit 1
+          fi
+
+          image="docker.io/${DOCKER_USER}/goreportcard:${RELEASE_TAG}"
+          manifest_file="$RUNNER_TEMP/docker-hub-manifest.json"
+          docker manifest inspect "$image" > "$manifest_file"
+          python3 - "$manifest_file" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as manifest_file:
+              manifest = json.load(manifest_file)
+
+          platforms = {
+              (entry.get("platform", {}).get("os"), entry.get("platform", {}).get("architecture"))
+              for entry in manifest.get("manifests", [])
+          }
+          expected = {("linux", "amd64"), ("linux", "arm64")}
+          missing = expected - platforms
+          if missing:
+              names = ", ".join("/".join(platform) for platform in sorted(missing))
+              raise SystemExit(f"Docker Hub image is missing published platforms: {names}")
+          PY
+
+      - name: Prepare SSH connection
+        env:
+          PRODUCTION_HOST: ${{ vars.PRODUCTION_HOST }}
+          PRODUCTION_SSH_PORT: ${{ vars.PRODUCTION_SSH_PORT || '22' }}
+          PRODUCTION_SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
+          PRODUCTION_KNOWN_HOSTS: ${{ secrets.PRODUCTION_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          for name in PRODUCTION_HOST PRODUCTION_SSH_PRIVATE_KEY PRODUCTION_KNOWN_HOSTS; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Configure $name in the production GitHub environment."
+              exit 1
+            fi
+          done
+          if [[ ! "$PRODUCTION_SSH_PORT" =~ ^[0-9]+$ ]]; then
+            echo "::error::PRODUCTION_SSH_PORT must be a number."
+            exit 1
+          fi
+
+          key_file="$RUNNER_TEMP/production_deploy_key"
+          known_hosts_file="$RUNNER_TEMP/production_known_hosts"
+          printf '%s\n' "$PRODUCTION_SSH_PRIVATE_KEY" > "$key_file"
+          printf '%s\n' "$PRODUCTION_KNOWN_HOSTS" > "$known_hosts_file"
+          chmod 600 "$key_file" "$known_hosts_file"
+
+          known_host="$PRODUCTION_HOST"
+          if [[ "$PRODUCTION_SSH_PORT" != "22" ]]; then
+            known_host="[$PRODUCTION_HOST]:$PRODUCTION_SSH_PORT"
+          fi
+          if ! ssh-keygen -F "$known_host" -f "$known_hosts_file" >/dev/null; then
+            echo "::error::PRODUCTION_KNOWN_HOSTS has no host key for $known_host."
+            exit 1
+          fi
+
+      - name: Deploy release image to production
+        env:
+          DOCKER_USER: ${{ secrets.DOCKER_USER }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          PRODUCTION_HOST: ${{ vars.PRODUCTION_HOST }}
+          PRODUCTION_USER: ${{ vars.PRODUCTION_USER }}
+          PRODUCTION_SSH_PORT: ${{ vars.PRODUCTION_SSH_PORT || '22' }}
+          PRODUCTION_DEPLOY_PATH: ${{ vars.PRODUCTION_DEPLOY_PATH }}
+          PRODUCTION_COMPOSE_FILE: ${{ vars.PRODUCTION_COMPOSE_FILE }}
+          PRODUCTION_COMPOSE_SERVICE: ${{ vars.PRODUCTION_COMPOSE_SERVICE || 'goreportcard' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in PRODUCTION_USER PRODUCTION_DEPLOY_PATH PRODUCTION_COMPOSE_FILE; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Configure $name in the production GitHub environment."
+              exit 1
+            fi
+          done
+          if [[ "$PRODUCTION_DEPLOY_PATH" != /* ]]; then
+            echo "::error::PRODUCTION_DEPLOY_PATH must be an absolute remote path."
+            exit 1
+          fi
+          if [[ ! "$PRODUCTION_COMPOSE_SERVICE" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+            echo "::error::PRODUCTION_COMPOSE_SERVICE contains unsupported characters."
+            exit 1
+          fi
+
+          ssh -i "$RUNNER_TEMP/production_deploy_key" \
+            -o IdentitiesOnly=yes \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/production_known_hosts" \
+            -o ConnectTimeout=15 \
+            -p "$PRODUCTION_SSH_PORT" \
+            "$PRODUCTION_USER@$PRODUCTION_HOST" \
+            bash -s -- \
+              "$PRODUCTION_DEPLOY_PATH" \
+              "$PRODUCTION_COMPOSE_FILE" \
+              "$PRODUCTION_COMPOSE_SERVICE" \
+              "docker.io/${DOCKER_USER}/goreportcard" \
+              "$RELEASE_TAG" <<'REMOTE'
+          set -euo pipefail
+          deploy_path="$1"
+          compose_file="$2"
+          service="$3"
+          image="$4"
+          tag="$5"
+
+          cd "$deploy_path"
+          if [[ "$compose_file" != /* ]]; then
+            compose_file="$deploy_path/$compose_file"
+          fi
+          if [[ ! -f "$compose_file" ]]; then
+            echo "Compose file not found: $compose_file" >&2
+            exit 1
+          fi
+
+          override_file="$(mktemp --suffix=.yaml "${TMPDIR:-/tmp}/goreportcard-deploy.XXXXXX")"
+          trap 'rm -f "$override_file"' EXIT
+          printf 'services:\n  %s:\n    image: %s:%s\n' "$service" "$image" "$tag" > "$override_file"
+
+          docker compose --project-directory "$deploy_path" \
+            -f "$compose_file" -f "$override_file" pull "$service"
+          docker compose --project-directory "$deploy_path" \
+            -f "$compose_file" -f "$override_file" \
+            up --detach --no-deps --wait --wait-timeout 180 "$service"
+          docker compose --project-directory "$deploy_path" \
+            -f "$compose_file" -f "$override_file" ps "$service"
+          REMOTE
