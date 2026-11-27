@@ -57,8 +57,8 @@ Example usage:
 git clone https://github.com/lbenicio/goreportcard.git
 cd goreportcard
 make install
-go install ./cmd/goreportcard-cli
-goreportcard-cli
+go install ./src/cmd/goreportcard
+goreportcard
 ```
 
 ```
@@ -77,7 +77,7 @@ misspell ............ 100%
 Verbose output:
 
 ```
-goreportcard-cli -v
+goreportcard -v
 ```
 
 ```
@@ -90,7 +90,7 @@ go_vet  vendor/github.com/prometheus/client_golang/prometheus/desc.go:25
         error: cannot find package "github.com/prometheus/client_model/go" in any of: (vet)
 
 gocyclo .............. 99%
-gocyclo download/download.go:22
+gocyclo src/download/download.go:22
         warning: cyclomatic complexity 17 of function download() is high (> 15) (gocyclo)
 
 golint .............. 100%

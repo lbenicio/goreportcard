@@ -16,8 +16,8 @@ fmt: ## Format Go source files
 	bash scripts/gofmt.sh
 
 vet: ## Run go vet
-	go vet ./check ./cmd/... ./download ./handlers ./tools/...
-	go vet ./main.go
+	go vet ./src/check ./src/cmd/... ./src/download ./src/handlers ./src/tools/...
+	go vet ./src/main.go
 
 staticcheck: ## Run staticcheck
 	go tool staticcheck ./...
@@ -26,7 +26,7 @@ test: ## Run tests and enforce coverage threshold
 	bash scripts/test.sh
 
 start: ## Start the web application
-	 go run main.go
+	go run ./src
 
 misspell: ## Check Go source spelling
-	find . -name '*.go' -not -path './_repos/*' -not -path './download/test_downloads/*' -not -path './check/testdata/*' | xargs go tool misspell -error
+	find . -name '*.go' -not -path './_repos/*' -not -path './src/download/test_downloads/*' -not -path './src/check/testdata/*' | xargs go tool misspell -error

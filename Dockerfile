@@ -10,10 +10,10 @@ COPY go.mod go.sum ./
 COPY scripts/install.sh ./scripts/install.sh
 RUN GOBIN=/out/bin ./scripts/install.sh
 
-COPY . .
+COPY src/ ./src/
 
 RUN mkdir -p /out/repo-cache/_repos/src/github.com \
-    && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/bin/goreportcard .
+    && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/bin/goreportcard ./src
 
 # The application runs git, unzip, wc, Go, and analyzer tools for submitted repositories.
 # Copy only the system executables and shared libraries those runtime commands need.

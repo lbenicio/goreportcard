@@ -5,6 +5,7 @@
 ### Changed
 - Download application and development tool dependencies through Go modules instead of committing a vendor tree.
 - Build the production container from a Distroless nonroot runtime image.
+- Move Go source packages and embedded assets under `src/`, and rename the CLI command to `goreportcard`.
 
 ### Removed
 - Remove the legacy embedded database importer.
