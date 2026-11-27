@@ -6,6 +6,20 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Go Report Card | Go project code quality report cards</title>
+    <script>
+      (function () {
+        var theme;
+        try {
+          theme = localStorage.getItem('goreportcard-theme');
+        } catch (error) {}
+        var preference = theme === 'dark' || theme === 'light' ? 'user' : 'system';
+        if (preference === 'system') {
+          theme = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        document.documentElement.setAttribute('data-theme', theme);
+        document.documentElement.setAttribute('data-theme-preference', preference);
+      })();
+    </script>
     <link rel="stylesheet" href="/assets/bulma.0.0.23.min.css">
     <link rel="stylesheet" href="/assets/font-awesome/css/font-awesome.min.css">
     <link rel="stylesheet" href="/assets/goreportcard.css">
@@ -53,6 +67,12 @@
             <span class="header-item">
               <a href="/about">About</a>
             </span>
+            <span class="header-item">
+              <button class="button is-light theme-toggle" type="button" aria-label="Switch to dark mode" title="Switch to dark mode">
+                <span class="icon"><i class="fa fa-moon-o" aria-hidden="true"></i></span>
+                <span class="theme-label">Dark mode</span>
+              </button>
+            </span>
           </div>
         </div>
     </header>
@@ -69,6 +89,7 @@
 
 <script src="https://code.jquery.com/jquery-3.2.1.min.js" integrity="sha256-hwg4gsxgFZhOsEEamdOYGBf13FyQuiTwlAQgxVSNgt4=" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/handlebars@4.7.7/dist/handlebars.min.js" integrity="sha256-ZSnrWNaPzGe8v25yP0S6YaMaDLMTDHC+4mHTw0xydEk=" crossorigin="anonymous"></script>
+<script src="/assets/theme.js" defer></script>
 <script>
   $(function () {
     // Get all "header-toggle" elements

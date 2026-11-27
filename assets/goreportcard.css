@@ -167,3 +167,183 @@ nav.results.stickytop {
         background-size: cover;
     }
 }
+
+.sunset-title {
+    border-bottom: 2px solid #eaeaea;
+    padding-bottom: 10px;
+}
+
+.sunset-signoff {
+    margin-top: 40px;
+    padding-top: 20px;
+    border-top: 1px solid #eaeaea;
+}
+
+/* Dark theme colors are applied after Bulma so its component defaults are overridden. */
+html[data-theme="light"] {
+    color-scheme: light;
+}
+
+html[data-theme="dark"] {
+    color-scheme: dark;
+}
+
+html[data-theme="dark"] body,
+html[data-theme="dark"] .section,
+html[data-theme="dark"] .footer {
+    background-color: #171a21;
+    color: #e3e6eb;
+}
+
+html[data-theme="dark"] .header,
+html[data-theme="dark"] .header .header-menu {
+    background-color: #20242d;
+}
+
+html[data-theme="dark"] .header .title,
+html[data-theme="dark"] .title,
+html[data-theme="dark"] .subtitle,
+html[data-theme="dark"] .content,
+html[data-theme="dark"] .content strong,
+html[data-theme="dark"] .label,
+html[data-theme="dark"] .menu-label,
+html[data-theme="dark"] .results-text,
+html[data-theme="dark"] .results-text strong,
+html[data-theme="dark"] .results-details,
+html[data-theme="dark"] .results-details .tool-title,
+html[data-theme="dark"] .header .header-item {
+    color: #e3e6eb;
+}
+
+html[data-theme="dark"] a,
+html[data-theme="dark"] .menu-list a {
+    color: #79c0ff;
+}
+
+html[data-theme="dark"] a:hover,
+html[data-theme="dark"] .menu-list a:hover {
+    color: #a5d6ff;
+}
+
+html[data-theme="dark"] .header a,
+html[data-theme="dark"] .header .title {
+    color: #e3e6eb;
+}
+
+html[data-theme="dark"] .header a:hover {
+    color: #a5d6ff;
+}
+
+html[data-theme="dark"] .table {
+    background-color: #20242d;
+    color: #e3e6eb;
+}
+
+html[data-theme="dark"] .table th,
+html[data-theme="dark"] .table td,
+html[data-theme="dark"] .table thead th {
+    border-color: #3a414d;
+    color: #e3e6eb;
+}
+
+html[data-theme="dark"] .table.is-striped tbody tr:not(.is-selected):nth-child(even),
+html[data-theme="dark"] .table.is-hoverable tbody tr:not(.is-selected):hover {
+    background-color: #292f3a;
+}
+
+html[data-theme="dark"] .panel,
+html[data-theme="dark"] .panel-heading,
+html[data-theme="dark"] .panel-block,
+html[data-theme="dark"] .menu.results {
+    background-color: #20242d;
+    border-color: #3a414d;
+    color: #e3e6eb;
+}
+
+html[data-theme="dark"] .panel-block:hover,
+html[data-theme="dark"] .menu-block.is-active {
+    background-color: #303744;
+    color: #ffffff;
+}
+
+html[data-theme="dark"] .input-box,
+html[data-theme="dark"] input,
+html[data-theme="dark"] textarea,
+html[data-theme="dark"] select {
+    background-color: #20242d;
+    border: 1px solid #515b6b;
+    color: #e3e6eb;
+}
+
+html[data-theme="dark"] .input-box::placeholder,
+html[data-theme="dark"] input::placeholder,
+html[data-theme="dark"] textarea::placeholder {
+    color: #a0a9b8;
+}
+
+html[data-theme="dark"] .button.is-light,
+html[data-theme="dark"] .button.is-white,
+html[data-theme="dark"] .button.is-static {
+    background-color: #303744;
+    border-color: #515b6b;
+    color: #e3e6eb;
+}
+
+html[data-theme="dark"] .notification:not(.is-primary):not(.is-link):not(.is-info):not(.is-success):not(.is-warning):not(.is-danger) {
+    background-color: #292f3a;
+    color: #e3e6eb;
+}
+
+html[data-theme="dark"] .notification.is-info {
+    background-color: #173b57;
+    color: #d4eaff;
+}
+
+html[data-theme="dark"] .notification.is-success {
+    background-color: #174a36;
+    color: #d5f5e5;
+}
+
+html[data-theme="dark"] .notification.is-warning {
+    background-color: #594517;
+    color: #fff0c2;
+}
+
+html[data-theme="dark"] .notification.is-danger {
+    background-color: #5a2528;
+    color: #ffe1e3;
+}
+
+html[data-theme="dark"] .menu-block.is-active {
+    background: #303744;
+}
+
+html[data-theme="dark"] .results-text .huge {
+    color: #ffffff;
+}
+
+html[data-theme="dark"] #badge_dropdown {
+    background-color: #20242d;
+    border-color: #515b6b;
+}
+
+html[data-theme="dark"] #badge_dropdown label {
+    color: #e3e6eb;
+}
+
+html[data-theme="dark"] hr {
+    background-color: #3a414d;
+}
+
+html[data-theme="dark"] .header-toggle span {
+    background-color: #e3e6eb;
+}
+
+html[data-theme="dark"] .sunset-title,
+html[data-theme="dark"] .sunset-signoff {
+    border-color: #3a414d;
+}
+
+html[data-theme="dark"] .theme-toggle {
+    white-space: nowrap;
+}

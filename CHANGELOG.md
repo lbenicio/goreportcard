@@ -3,12 +3,14 @@
 ## [Unreleased]
 
 ### Added
-- Add Redis-backed analysis job integration tests and provide Redis in the CI test job.
+- Add a system-aware dark theme with a persistent manual toggle.
+- Add Redis-backed analysis job integration tests and configure Redis in CI and Codecov workflows.
 - Start a temporary Redis server for local test runs when `TEST_REDIS_URL` is unset.
 
 ### Changed
 - Enforce aggregate Go statement coverage above 98% in `make test`.
 - Convert repository analysis panics into failed jobs so the Redis worker can continue processing.
+- Isolate recent-repository cache state and stabilize Redis analysis-key assertions in handler tests.
 
 ## [1.2.3] - 2026-11-19
 
@@ -16,10 +18,14 @@
 - Store asynchronous repository analysis jobs in Redis and coordinate a single worker across app instances, preserving queued jobs and poll status across restarts.
 - Require Redis for analysis submissions when `REDIS_URL` is configured; retain process-local job state for single-process local development without Redis.
 
+### Fixed
+- Use Redis `MOVE` to transfer queued analysis jobs between Redis databases.
+
 ## [1.2.2] - 2026-11-18
 
 ### Added
 - Poll homepage report submissions, show toast status notifications, and add completed reports to the recent list.
+- Add test coverage for recent-repository cache behavior and MySQL URL validation.
 
 ### Changed
 - Clear the repository field after a report completes while keeping the homepage open.
@@ -31,9 +37,13 @@
 
 ### Added
 - Cache recent repositories in Redis and invalidate the cache when a repository is added to the recent list.
+- Add `CODEOWNERS` rules to request maintainer review on Dependabot updates to `go.mod` and `go.sum`.
 
 ### Fixed
 - Keep homepage responses fast by refreshing recent repositories in the background and retaining the last cached list when storage reads fail.
+
+### Changed
+- Upgrade the indirect `filippo.io/edwards25519` dependency from 1.1.0 to 1.1.1.
 
 ## [1.2.0] - 2026-11-09
 
