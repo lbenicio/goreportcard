@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Removed
+- Remove the legacy embedded database importer.
+
 ## [1.2.4] - 2026-11-27
 
 ### Added
@@ -57,7 +60,7 @@
 
 ### Changed
 - Restrict CI token permissions to read-only and scope release workflow permissions to publishing needs.
-- Improve error handling and cleanup across application startup, repository downloads, Badger imports, and maintenance tools.
+- Improve error handling and cleanup across application startup, repository downloads, database imports, and maintenance tools.
 
 ### Fixed
 - Correct Go source-file detection in license analysis.
@@ -86,8 +89,8 @@
 ## [1.1.0] - 2026-11-08
 
 ### Added
-- Replace the local Badger runtime store with PostgreSQL using typed, normalized tables for reports, checks, file summaries, and errors.
-- Add versioned PostgreSQL schema migrations and a read-only Badger-to-PostgreSQL importer.
+- Replace the local key-value runtime store with PostgreSQL using typed, normalized tables for reports, checks, file summaries, and errors.
+- Add versioned PostgreSQL schema migrations and a read-only legacy data importer.
 
 ### Changed
 - Configure the web app with `DATABASE_URL`; derive the leaderboard from current relational report data and maintain the repository count transactionally.
@@ -141,4 +144,4 @@
 - Update CI actions and use the Go 1.27 toolchain; refresh test fixtures for Go 1.27 `go vet` behavior.
 
 ### Fixed
-- Improve error handling when reading repository-count metadata from Badger.
+- Improve error handling when reading repository-count metadata from the legacy store.

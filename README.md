@@ -40,14 +40,6 @@ The selected relational database remains the source of truth for completed repor
 
 For local development, `REDIS_URL` may be omitted when running a single app process; analysis job state then remains in that process's memory. Configure Redis for production and whenever running more than one app instance.
 
-If you have an existing Badger database, stop the old application and import it before starting the service:
-
-```
-DATABASE_URL='postgresql://user:password@localhost:5432/goreportcard?sslmode=disable' go run ./cmd/import-badger -badger-path ./db
-```
-
-Use a new or empty database of the selected type for the import; matching repository paths are upserted. The importer reads Badger in read-only mode. Keep a backup of the old database until you have verified the import. The leaderboard is calculated from each repository's current report, and the repository count is maintained transactionally.
-
 Once the server starts, you should see
 
 ```
