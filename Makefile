@@ -1,30 +1,34 @@
-all: lint build test
+all: lint build test ## Run lint, build, and tests
 
-build:
+.PHONY: help
+help: ## Show this help message
+	@awk 'BEGIN { FS = ":.*##[[:space:]]*"; printf "Usage: make <target>\n\nTargets:\n" } /^[a-zA-Z0-9_-]+:.*##/ { sub(/^[[:space:]]+/, "", $$2); printf "  %-12s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+
+build: ## Build all Go packages
 	go build ./...
 
-install:
+install: ## Install development tools
 	bash /scripts/install.sh
 
-lint: fmt vet staticcheck misspell
+lint: fmt vet staticcheck misspell ## Run formatting, vet, staticcheck, and misspell
 
-fmt:
+fmt: ## Format Go source files
 	bash /scripts/gofmt.sh
 
-vet:
+vet: ## Run go vet
 	go vet ./check ./cmd/... ./download ./handlers ./tools/...
 	go vet ./main.go
 
-staticcheck:
+staticcheck: ## Run staticcheck
 	@[ -x "$(shell which staticcheck)" ] || go install ./vendor/honnef.co/go/tools/cmd/staticcheck
 	staticcheck ./...
 
-test:
+test: ## Run tests and enforce coverage threshold
 	bash /scripts/test.sh
 
-start:
+start: ## Start the web application
 	 go run main.go
 
-misspell:
+misspell: ## Check Go source spelling
 	@[ -x "$(shell which misspell)" ] || go install ./vendor/github.com/client9/misspell/cmd/misspell
 	find . -name '*.go' -not -path './vendor/*' -not -path './_repos/*' -not -path './download/test_downloads/*' -not -path './check/testdata/*' | xargs misspell -error
