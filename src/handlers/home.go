@@ -78,7 +78,7 @@ func (gh *GRCHandler) HomeHandler(w http.ResponseWriter, r *http.Request, db sto
 			"Recent":               recent,
 			"google_analytics_key": googleAnalyticsKey,
 		}); err != nil {
-			log.Println(err)
+			log.Println("ERROR: could not render home template:", err)
 		}
 
 		return

@@ -708,12 +708,12 @@ func skipLargeRepositoryTool(tool string, filenameCount int) bool {
 	switch tool {
 	case "misspell":
 		if filenameCount > 300 {
-			log.Println("disabling misspell on large repo...")
+			log.Println("DEBUG: disabling misspell on large repo...")
 			return true
 		}
 	case "ineffassign":
 		if filenameCount > 100 {
-			log.Println("disabling ineffassign on large repo...")
+			log.Println("DEBUG: disabling ineffassign on large repo...")
 			return true
 		}
 	}

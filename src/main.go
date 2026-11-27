@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/lbenicio/goreportcard/src/handlers"
+	"github.com/lbenicio/goreportcard/src/logging"
 	"github.com/lbenicio/goreportcard/src/storage"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -21,7 +22,11 @@ import (
 )
 
 var (
-	addr = flag.String("http", ":8000", "HTTP listen address")
+	addr        = flag.String("http", envOrDefault("HTTP_ADDR", ":8000"), "HTTP listen address")
+	logLevel    = flag.String("log-level", envOrDefault("LOG_LEVEL", "info"), "Minimum log level: debug, info, warn, or error")
+	logColor    = flag.String("log-color", envOrDefault("LOG_COLOR", "auto"), "Log coloring: auto, always, or never")
+	showVersion = flag.Bool("v", false, "Print version and exit")
+	version     = "dev"
 
 	//go:embed assets/*
 	embedFS embed.FS
@@ -30,6 +35,10 @@ var (
 type closeableStore interface {
 	storage.Store
 	Close() error
+}
+
+func init() {
+	flag.BoolVar(showVersion, "version", false, "Print version and exit")
 }
 
 var (
@@ -76,7 +85,7 @@ func makeHandler(db storage.Store, name string, fn func(http.ResponseWriter, *ht
 		if m2 != nil {
 			// old format is being used
 			repo = "github.com/" + repo
-			log.Printf("Assuming intended repo is %q, redirecting", repo)
+			log.Printf("DEBUG: assuming intended repo is %q, redirecting", repo)
 			http.Redirect(w, r, fmt.Sprintf("/%s/%s", name, repo), http.StatusMovedPermanently)
 			return
 		}
@@ -120,7 +129,7 @@ func setupMetricsWithRegisterer(registerer prometheus.Registerer) *metrics {
 func (m metrics) recordDuration(start time.Time, name string) {
 	elapsed := time.Since(start)
 	m.responseTimes.WithLabelValues(name).Observe(float64(elapsed.Milliseconds()))
-	log.Printf("Served %s in %s", name, elapsed)
+	log.Printf("DEBUG: served %s in %s", name, elapsed)
 }
 
 // instrument adds metric instrumentation to the handler passed in as argument
@@ -133,9 +142,24 @@ func (m metrics) instrument(path string, h http.HandlerFunc) (string, http.Handl
 
 func main() {
 	parseFlags()
+	if *showVersion {
+		fmt.Printf("goreportcard version %s\n", version)
+		return
+	}
+	if err := logging.Configure(*logLevel, *logColor); err != nil {
+		fatal(fmt.Errorf("ERROR: %w", err))
+		return
+	}
 	if err := run(); err != nil {
 		fatal(err)
 	}
+}
+
+func envOrDefault(name, fallback string) string {
+	if value := strings.TrimSpace(os.Getenv(name)); value != "" {
+		return value
+	}
+	return fallback
 }
 
 func run() error {

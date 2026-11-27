@@ -9,6 +9,9 @@ coverage.out
 *.test
 **/*_test.go
 **/testdata/
+.env
+.env.*
+!.env.example
 README.md
 CHANGELOG.md
 LICENSE.txt

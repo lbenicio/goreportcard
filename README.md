@@ -40,6 +40,18 @@ The selected relational database remains the source of truth for completed repor
 
 For local development, `REDIS_URL` may be omitted when running a single app process; analysis job state then remains in that process's memory. Configure Redis for production and whenever running more than one app instance.
 
+Copy `.env.example` to `.env` and edit the database settings for local use. The app does not load `.env` automatically; export its values in your shell before starting the server:
+
+```sh
+cp .env.example .env
+set -a
+. ./.env
+set +a
+make start
+```
+
+The server supports `-h`/`--help` and `-v`/`--version`. Set `HTTP_ADDR` or pass `--http` to change the listen address. `LOG_LEVEL` or `--log-level` accepts `debug`, `info`, `warn`, and `error`; routine request and cache messages are logged at `debug`. `LOG_COLOR` or `--log-color` accepts `auto`, `always`, and `never`. Automatic coloring is enabled for terminal output and honors `NO_COLOR`.
+
 Once the server starts, you should see
 
 ```
@@ -61,6 +73,8 @@ go install ./src/cmd/goreportcard
 goreportcard
 ```
 
+The CLI supports `-h`/`--help` and `-v`/`--version`. Use `--verbose` to include per-file check details. `--log-level` and `--log-color` accept the same values as the server settings above.
+
 ```
 Grade .......... A+  99.9%
 Files ................ 362
@@ -77,27 +91,10 @@ misspell ............ 100%
 Verbose output:
 
 ```
-goreportcard -v
+goreportcard --verbose
 ```
 
-```
-Grade .......... A+  99.9%
-Files ................ 362
-Issues ................. 2
-gofmt ............... 100%
-go_vet ............... 99%
-go_vet  vendor/github.com/prometheus/client_golang/prometheus/desc.go:25
-        error: cannot find package "github.com/prometheus/client_model/go" in any of: (vet)
-
-gocyclo .............. 99%
-gocyclo src/download/download.go:22
-        warning: cyclomatic complexity 17 of function download() is high (> 15) (gocyclo)
-
-golint .............. 100%
-ineffassign ......... 100%
-license ............. 100%
-misspell ............ 100%
-```
+Verbose mode adds file names and line-level errors for checks that report file details.
 
 ### Contributing
 

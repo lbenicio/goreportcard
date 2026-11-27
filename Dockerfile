@@ -12,8 +12,9 @@ RUN GOBIN=/out/bin ./scripts/install.sh
 
 COPY src/ ./src/
 
+ARG VERSION=dev
 RUN mkdir -p /out/repo-cache/_repos/src/github.com \
-    && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/bin/goreportcard ./src
+    && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/bin/goreportcard ./src
 
 # The application runs git, unzip, wc, Go, and analyzer tools for submitted repositories.
 # Copy only the system executables and shared libraries those runtime commands need.

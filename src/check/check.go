@@ -49,7 +49,7 @@ func Run(dir string, cli bool) (ChecksResult, error) {
 
 	err = RenameFiles(skipped)
 	if err != nil {
-		log.Println("Could not rename files:", err)
+		log.Println("ERROR: could not rename files:", err)
 	}
 
 	if cli {

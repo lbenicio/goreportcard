@@ -2,7 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+- Add debug, info, warning, and error log levels with configurable terminal colors.
+- Add help and version flags to the server and CLI, plus a sample `.env.example` configuration.
+
 ### Changed
+- Document server configuration, log settings, and CLI help, version, and verbose flags.
+- Point build, lint, and coverage targets at the Go packages under `src/`.
 - Download application and development tool dependencies through Go modules instead of committing a vendor tree.
 - Build the production container from a Distroless nonroot runtime image.
 - Move Go source packages and embedded assets under `src/`, and rename the CLI command to `goreportcard`.

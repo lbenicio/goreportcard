@@ -111,3 +111,8 @@ screenshots/
 
 # Test coverage
 coverage.txt
+
+# Local configuration
+.env
+.env.*
+!.env.example

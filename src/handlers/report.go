@@ -15,7 +15,7 @@ var googleAnalyticsKey = flag.String("google_analytics_key", "G-TFTF5Y92QD", "Go
 
 // ReportHandler handles the report page
 func (gh *GRCHandler) ReportHandler(w http.ResponseWriter, r *http.Request, db storage.Store, repo string) {
-	log.Printf("Displaying report: %q", repo)
+	log.Printf("DEBUG: displaying report: %q", repo)
 	t, err := gh.loadTemplate("/templates/report.html")
 	if err != nil {
 		log.Println("ERROR: could not get report template: ", err)

@@ -9,17 +9,33 @@ import (
 	"strings"
 
 	"github.com/lbenicio/goreportcard/src/check"
+	"github.com/lbenicio/goreportcard/src/logging"
 )
 
 var (
 	dir         = flag.String("d", ".", "Root directory of your Go application")
-	verbose     = flag.Bool("v", false, "Verbose output")
+	verbose     = flag.Bool("verbose", false, "Verbose output")
 	th          = flag.Float64("t", 0, "Threshold of failure command")
 	jsn         = flag.Bool("j", false, "JSON output. The binary will always exit with code 0")
+	showVersion = flag.Bool("v", false, "Print version and exit")
+	logLevel    = flag.String("log-level", envOrDefault("LOG_LEVEL", "info"), "Minimum log level: debug, info, warn, or error")
+	logColor    = flag.String("log-color", envOrDefault("LOG_COLOR", "auto"), "Log coloring: auto, always, or never")
+	version     = "dev"
 	runCheck    = check.Run
 	exitProcess = os.Exit
 	fatalf      = log.Fatalf
 )
+
+func init() {
+	flag.BoolVar(showVersion, "version", false, "Print version and exit")
+}
+
+func envOrDefault(name, fallback string) string {
+	if value := strings.TrimSpace(os.Getenv(name)); value != "" {
+		return value
+	}
+	return fallback
+}
 
 // dotPrintf fills in the blank space between two strings with dots. The total
 // length displayed is indicated by fullLen. The left string is specified by
@@ -36,6 +52,14 @@ func dotPrintf(fullLen int, lfStr, rtFmtStr string, args ...interface{}) {
 
 func main() {
 	flag.Parse()
+	if *showVersion {
+		fmt.Printf("goreportcard version %s\n", version)
+		return
+	}
+	if err := logging.Configure(*logLevel, *logColor); err != nil {
+		fatalf("ERROR: %v", err)
+		return
+	}
 
 	result, err := runCheck(*dir, true)
 	if err != nil {

@@ -171,6 +171,7 @@ jobs:
           ghcr_tag="${GHCR_IMAGE}:${VERSION}-${ARCH}"
           docker_tag="${DOCKER_IMAGE}:${VERSION}-${ARCH}"
           docker build --pull --platform "$PLATFORM" \
+            --build-arg "VERSION=$VERSION" \
             --tag "$ghcr_tag" \
             --tag "$docker_tag" \
             "${build_args[@]}" \
@@ -185,10 +186,101 @@ jobs:
           docker push "$ghcr_tag"
           docker push "$docker_tag"
 
+  cli_build:
+    needs: prepare
+    if: github.ref == 'refs/heads/main'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            extension: ""
+            archive: tar.gz
+          - goos: linux
+            goarch: arm64
+            extension: ""
+            archive: tar.gz
+          - goos: darwin
+            goarch: amd64
+            extension: ""
+            archive: tar.gz
+          - goos: darwin
+            goarch: arm64
+            extension: ""
+            archive: tar.gz
+          - goos: windows
+            goarch: amd64
+            extension: .exe
+            archive: zip
+          - goos: windows
+            goarch: arm64
+            extension: .exe
+            archive: zip
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Build CLI archive
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          BINARY_EXTENSION: ${{ matrix.extension }}
+          ARCHIVE_FORMAT: ${{ matrix.archive }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          package="goreportcard_${VERSION}_${GOOS}_${GOARCH}"
+          package_dir="dist/${package}"
+          binary="goreportcard${BINARY_EXTENSION}"
+          archive="dist/${package}.${ARCHIVE_FORMAT}"
+
+          mkdir -p "$package_dir"
+          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "${package_dir}/${binary}" ./src/cmd/goreportcard
+          cp LICENSE.txt "$package_dir/"
+
+          python3 - "$package_dir" "$archive" "$ARCHIVE_FORMAT" <<'PY'
+          import pathlib
+          import sys
+          import tarfile
+          import zipfile
+
+          source = pathlib.Path(sys.argv[1])
+          archive = pathlib.Path(sys.argv[2])
+          archive_format = sys.argv[3]
+          if archive_format == "zip":
+              with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as output:
+                  for file in source.rglob("*"):
+                      if file.is_file():
+                          output.write(file, file.relative_to(source.parent))
+          else:
+              with tarfile.open(archive, "w:gz") as output:
+                  output.add(source, arcname=source.name)
+          PY
+
+      - name: Upload CLI archive
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: goreportcard-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/goreportcard_${{ needs.prepare.outputs.version }}_${{ matrix.goos }}_${{ matrix.goarch }}.${{ matrix.archive }}
+          if-no-files-found: error
+          retention-days: 1
+
   publish:
     needs:
       - prepare
       - build
+      - cli_build
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -214,6 +306,17 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download CLI release archives
+        uses: actions/download-artifact@v8.0.2
+        with:
+          pattern: goreportcard-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create CLI checksums
+        working-directory: release-assets
+        run: sha256sum goreportcard_*.tar.gz goreportcard_*.zip > SHA256SUMS
 
       - name: Publish multi-platform tags
         id: publish_images
@@ -253,7 +356,19 @@ jobs:
           Path(os.environ["RUNNER_TEMP"], "release-notes.md").write_bytes(notes)
           PY
 
-          gh release create "$VERSION" --target "$GITHUB_SHA" --title "v${VERSION}" --notes-file "$RUNNER_TEMP/release-notes.md"
+          shopt -s nullglob
+          release_assets=(release-assets/goreportcard_*.tar.gz release-assets/goreportcard_*.zip)
+          shopt -u nullglob
+          if [[ "${#release_assets[@]}" -ne 6 ]]; then
+            echo "::error::Expected six platform CLI archives, found ${#release_assets[@]}."
+            exit 1
+          fi
+          release_assets+=(release-assets/SHA256SUMS)
+
+          gh release create "$VERSION" "${release_assets[@]}" \
+            --target "$GITHUB_SHA" \
+            --title "v${VERSION}" \
+            --notes-file "$RUNNER_TEMP/release-notes.md"
           printf 'created=true\n' >> "$GITHUB_OUTPUT"
 
   summary:
@@ -262,6 +377,7 @@ jobs:
       - reject-non-main
       - prepare
       - build
+      - cli_build
       - publish
     runs-on: ubuntu-latest
     permissions:
@@ -273,6 +389,7 @@ jobs:
           BRANCH_GATE_RESULT: ${{ needs.reject-non-main.result }}
           PREPARE_RESULT: ${{ needs.prepare.result }}
           BUILD_RESULT: ${{ needs.build.result }}
+          CLI_BUILD_RESULT: ${{ needs.cli_build.result }}
           PUBLISH_RESULT: ${{ needs.publish.result }}
           MANIFESTS_PUBLISHED: ${{ needs.publish.outputs.manifests_published }}
           RELEASE_CREATED: ${{ needs.publish.outputs.release_created }}
@@ -304,7 +421,7 @@ jobs:
             branch_gate="✅ Main branch selected (non-main guard skipped)"
           fi
 
-          if [[ "$MANIFESTS_PUBLISHED" == "true" && "$RELEASE_CREATED" == "true" ]]; then
+          if [[ "$MANIFESTS_PUBLISHED" == "true" && "$RELEASE_CREATED" == "true" && "$CLI_BUILD_RESULT" == "success" ]]; then
             title="## ✅ Release workflow completed"
           else
             title="## ❌ Release workflow did not complete"
@@ -322,6 +439,7 @@ jobs:
             printf '| Branch gate | %s |\n' "$branch_gate"
             printf '| Prepare | %s |\n' "$(status_mark "$PREPARE_RESULT")"
             printf '| Native amd64/arm64 builds | %s |\n' "$(status_mark "$BUILD_RESULT")"
+            printf '| Cross-platform CLI builds | %s |\n' "$(status_mark "$CLI_BUILD_RESULT")"
             if [[ "$MANIFESTS_PUBLISHED" == "true" ]]; then
               manifest_status='✅ Published'
             else
@@ -338,13 +456,14 @@ jobs:
             if [[ "$RELEASE_CREATED" == "true" && -n "$VERSION" ]]; then
               printf '**GitHub release:** [v%s](%s/%s/releases/tag/%s)\n\n' \
                 "$VERSION" "$SERVER_URL" "$REPOSITORY" "$VERSION"
+              printf '**CLI archives:** Linux, macOS, and Windows for amd64 and arm64; checksums are attached as \x60SHA256SUMS\x60.\n\n'
             fi
 
             printf '### Container images\n\n'
             if [[ "$MANIFESTS_PUBLISHED" == "true" && -n "$VERSION" ]]; then
               printf -- '- GHCR: \x60%s:%s\x60 and \x60%s:latest\x60\n' "$GHCR_IMAGE" "$VERSION" "$GHCR_IMAGE"
               printf -- '- Docker Hub: \x60%s:%s\x60 and \x60%s:latest\x60\n' "$DOCKER_IMAGE" "$VERSION" "$DOCKER_IMAGE"
-              printf -- '- Platforms: \x60linux/amd64\x60, \x60linux/arm64\x60\n\n'
+              printf -- "- Platforms: \x60linux/amd64\x60, \x60linux/arm64\x60\n\n"
             elif [[ "$BUILD_RESULT" == "success" && -n "$VERSION" ]]; then
               printf 'Native architecture builds completed, but multi-platform tags were not confirmed. Check the publish job logs.\n\n'
             else

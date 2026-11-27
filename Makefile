@@ -5,7 +5,7 @@ help: ## Show this help message
 	@awk 'BEGIN { FS = ":.*##[[:space:]]*"; printf "Usage: make <target>\n\nTargets:\n" } /^[a-zA-Z0-9_-]+:.*##/ { sub(/^[[:space:]]+/, "", $$2); printf "  %-12s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
 build: ## Build all Go packages
-	go build ./...
+	go build ./src/...
 
 install: ## Download modules and install analysis tools
 	bash scripts/install.sh
@@ -16,11 +16,10 @@ fmt: ## Format Go source files
 	bash scripts/gofmt.sh
 
 vet: ## Run go vet
-	go vet ./src/check ./src/cmd/... ./src/download ./src/handlers ./src/tools/...
-	go vet ./src/main.go
+	go vet ./src/...
 
 staticcheck: ## Run staticcheck
-	go tool staticcheck ./...
+	@set -e; packages="$$(go list ./src/...)"; for package in $$packages; do go tool staticcheck "$$package"; done
 
 test: ## Run tests and enforce coverage threshold
 	bash scripts/test.sh
