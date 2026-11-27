@@ -8,12 +8,12 @@ build: ## Build all Go packages
 	go build ./...
 
 install: ## Install development tools
-	bash /scripts/install.sh
+	bash scripts/install.sh
 
 lint: fmt vet staticcheck misspell ## Run formatting, vet, staticcheck, and misspell
 
 fmt: ## Format Go source files
-	bash /scripts/gofmt.sh
+	bash scripts/gofmt.sh
 
 vet: ## Run go vet
 	go vet ./check ./cmd/... ./download ./handlers ./tools/...
@@ -24,7 +24,7 @@ staticcheck: ## Run staticcheck
 	staticcheck ./...
 
 test: ## Run tests and enforce coverage threshold
-	bash /scripts/test.sh
+	bash scripts/test.sh
 
 start: ## Start the web application
 	 go run main.go
