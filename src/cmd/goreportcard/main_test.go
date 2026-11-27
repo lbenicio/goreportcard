@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"strings"
 	"testing"
@@ -113,13 +114,63 @@ func TestMainCheckErrorUsesFatalLoggerAndReturns(t *testing.T) {
 	}
 }
 
+func TestMainPrintsVersionAndSkipsChecks(t *testing.T) {
+	preserveCLIState(t)
+	*showVersion = true
+	version = "1.2.5-test"
+	runCheck = func(string, bool) (check.ChecksResult, error) {
+		t.Fatal("runCheck called when printing version")
+		return check.ChecksResult{}, nil
+	}
+
+	output := captureCommandStdout(t, main)
+	if want := "goreportcard version 1.2.5-test\n"; output != want {
+		t.Fatalf("version output = %q, want %q", output, want)
+	}
+}
+
+func TestMainReportsInvalidLoggingConfiguration(t *testing.T) {
+	preserveCLIState(t)
+	*showVersion = false
+	*logLevel = "trace"
+	var fatalMessage string
+	fatalf = func(format string, args ...interface{}) {
+		fatalMessage = fmt.Sprintf(format, args...)
+	}
+	runCheck = func(string, bool) (check.ChecksResult, error) {
+		t.Fatal("runCheck called with invalid logging configuration")
+		return check.ChecksResult{}, nil
+	}
+
+	main()
+	if !strings.Contains(fatalMessage, "invalid LOG_LEVEL") {
+		t.Fatalf("fatal message = %q, want invalid log-level error", fatalMessage)
+	}
+}
+
+func TestEnvOrDefault(t *testing.T) {
+	t.Setenv("GOREPORTCARD_TEST_VALUE", "  configured  ")
+	if got := envOrDefault("GOREPORTCARD_TEST_VALUE", "fallback"); got != "configured" {
+		t.Fatalf("envOrDefault(configured) = %q, want configured", got)
+	}
+	t.Setenv("GOREPORTCARD_TEST_VALUE", "  ")
+	if got := envOrDefault("GOREPORTCARD_TEST_VALUE", "fallback"); got != "fallback" {
+		t.Fatalf("envOrDefault(blank) = %q, want fallback", got)
+	}
+}
+
 func preserveCLIState(t *testing.T) {
 	t.Helper()
 	oldDir, oldVerbose, oldThreshold, oldJSON := *dir, *verbose, *th, *jsn
+	oldShowVersion, oldLogLevel, oldLogColor, oldVersion := *showVersion, *logLevel, *logColor, version
 	oldRunCheck, oldExitProcess, oldFatalf := runCheck, exitProcess, fatalf
+	oldLogWriter, oldLogFlags := log.Writer(), log.Flags()
 	t.Cleanup(func() {
 		*dir, *verbose, *th, *jsn = oldDir, oldVerbose, oldThreshold, oldJSON
+		*showVersion, *logLevel, *logColor, version = oldShowVersion, oldLogLevel, oldLogColor, oldVersion
 		runCheck, exitProcess, fatalf = oldRunCheck, oldExitProcess, oldFatalf
+		log.SetOutput(oldLogWriter)
+		log.SetFlags(oldLogFlags)
 	})
 }
 

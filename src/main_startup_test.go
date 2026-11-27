@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"io/fs"
 	"log"
 	"net/http"
@@ -196,6 +197,113 @@ func TestMainReportsStartupError(t *testing.T) {
 	if len(fatalArgs) != 1 || !strings.Contains(fatalArgs[0].(error).Error(), "could not open database") {
 		t.Fatalf("fatal arguments = %#v, want the database startup error", fatalArgs)
 	}
+}
+
+func TestMainPrintsVersionWithoutStartingService(t *testing.T) {
+	store := configureApplicationTest(t)
+	oldShowVersion, oldVersion := *showVersion, version
+	t.Cleanup(func() { *showVersion, version = oldShowVersion, oldVersion })
+	*showVersion = true
+	version = "1.2.5-test"
+
+	output := captureMainStdout(t, main)
+	if want := "goreportcard version 1.2.5-test\n"; output != want {
+		t.Fatalf("version output = %q, want %q", output, want)
+	}
+	if store.closed {
+		t.Fatal("version command started and closed the database")
+	}
+}
+
+func TestMainReportsInvalidLoggingConfiguration(t *testing.T) {
+	configureApplicationTest(t)
+	oldShowVersion, oldLogLevel := *showVersion, *logLevel
+	t.Cleanup(func() { *showVersion, *logLevel = oldShowVersion, oldLogLevel })
+	*showVersion = false
+	*logLevel = "trace"
+	var fatalArgs []any
+	fatal = func(args ...any) { fatalArgs = args }
+
+	main()
+	if len(fatalArgs) != 1 || !strings.Contains(fatalArgs[0].(error).Error(), "invalid LOG_LEVEL") {
+		t.Fatalf("fatal arguments = %#v, want invalid logging configuration", fatalArgs)
+	}
+}
+
+func TestEnvOrDefault(t *testing.T) {
+	t.Setenv("GOREPORTCARD_TEST_VALUE", "  configured  ")
+	if got := envOrDefault("GOREPORTCARD_TEST_VALUE", "fallback"); got != "configured" {
+		t.Fatalf("envOrDefault(configured) = %q, want configured", got)
+	}
+	t.Setenv("GOREPORTCARD_TEST_VALUE", "  ")
+	if got := envOrDefault("GOREPORTCARD_TEST_VALUE", "fallback"); got != "fallback" {
+		t.Fatalf("envOrDefault(blank) = %q, want fallback", got)
+	}
+}
+
+func TestRunReturnsRedisAnalysisConfigurationError(t *testing.T) {
+	store := configureApplicationTest(t)
+	t.Setenv("REDIS_URL", "redis://unit-test")
+	wantErr := errors.New("analysis Redis unavailable")
+	configureRedisAnalysisJobs = func(context.Context, string, storage.Store) (func() error, error) {
+		return nil, wantErr
+	}
+
+	if err := run(); !errors.Is(err, wantErr) || !strings.Contains(err.Error(), "could not configure Redis analysis jobs") {
+		t.Fatalf("run error = %v, want wrapped analysis Redis error", err)
+	}
+	if !store.closed {
+		t.Fatal("database store was not closed after Redis analysis setup failed")
+	}
+}
+
+func TestRunLogsRedisAnalysisCloseError(t *testing.T) {
+	configureApplicationTest(t)
+	t.Setenv("REDIS_URL", "redis://unit-test")
+	wantErr := errors.New("analysis worker close failed")
+	configureRedisAnalysisJobs = func(context.Context, string, storage.Store) (func() error, error) {
+		return func() error { return wantErr }, nil
+	}
+
+	var output bytes.Buffer
+	oldOutput, oldFlags := log.Writer(), log.Flags()
+	log.SetOutput(&output)
+	t.Cleanup(func() {
+		log.SetOutput(oldOutput)
+		log.SetFlags(oldFlags)
+	})
+
+	if err := run(); err != nil {
+		t.Fatalf("run() error = %v, want nil", err)
+	}
+	if !strings.Contains(output.String(), wantErr.Error()) {
+		t.Fatalf("log output = %q, want analysis worker close error", output.String())
+	}
+}
+
+func captureMainStdout(t *testing.T, run func()) string {
+	t.Helper()
+	originalStdout := os.Stdout
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = writer
+	t.Cleanup(func() {
+		os.Stdout = originalStdout
+		_ = reader.Close()
+		_ = writer.Close()
+	})
+	run()
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = originalStdout
+	output, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(output)
 }
 
 func TestRunHandlesRepositoryDirectoryAndRedisCloseErrors(t *testing.T) {
